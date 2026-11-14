@@ -4,16 +4,15 @@ export default {
 
     // --- KONFIGURASI DATABASE GITHUB ---
     const GH_OWNER = (env && env.GITHUB_OWNER) || "vitoa7117-cell";
-    const GH_REPO = (env && env.GITHUB_REPO) || "pito-ultimate";
-    const GH_TOKEN =
-      (env && env.GITHUB_TOKEN) ||
-      "Github_pat_11CUVR2JQ08HxwdTyJ0T96_EwAcSPwhREJPzcHGHJJ6xqzKTySFavxx2uireClOAwdG7LRUM4646QLMZUX";
+    const GH_REPO = (env && env.GITHUB_REPO) || "pito-chat-live";
+    const GH_TOKEN = (env && env.GITHUB_TOKEN) || "";
     const STATE_PATH = "data/state.json";
     const SEC_LOG_PATH = "data/security_logs.json";
 
     const DEFAULT_STATE = {
       messages: [],
       users: {},
+      onlineUsers: {},
       posts: [],
       dms: [],
       banned: [],
@@ -22,6 +21,11 @@ export default {
       bios: {},
       galleries: {},
       followers: {},
+      botFollowerBoost: {},
+      followRequests: {},
+      accountPrivacy: {},
+      inboxNotifications: {},
+      checkinProgress: {},
       blocks: {},
       profilesMeta: {},
       vipStatus: {},
@@ -32,6 +36,8 @@ export default {
       devTheme: "rgb_rainbow",
       devAccessory: "acc_dev_crown",
       devLoginMsg: "👑 DEVELOPER RGB LAGI ON NIH! Sapa developer yuk!",
+      announcementAudio: "",
+      devOnlineAudio: "",
       announcement: null
     };
 
@@ -51,6 +57,19 @@ export default {
         bytes[i] = bin.charCodeAt(i);
       }
       return new TextDecoder().decode(bytes);
+    }
+
+    function cleanOnlineMap(mapObj) {
+      const now = Date.now();
+      const cleaned = {};
+      if (!mapObj || typeof mapObj !== "object") return cleaned;
+      for (const [uname, entry] of Object.entries(mapObj)) {
+        const lastSeen = typeof entry === "number" ? entry : (entry && entry.time) || 0;
+        if (now - lastSeen < 20000) {
+          cleaned[uname] = typeof entry === "number" ? { time: lastSeen } : entry;
+        }
+      }
+      return cleaned;
     }
 
     async function ghGetFile(path, fallback) {
@@ -151,7 +170,6 @@ export default {
       );
     }
 
-    // Deteksi Serangan, Bot Perusak, & Script Injection
     const maliciousSignatures = [
       "sqlmap",
       "nikto",
@@ -214,10 +232,41 @@ export default {
       }
     }
 
+    if (url.pathname === "/api/online/ping" && requestMethod === "POST") {
+      try {
+        const payload = await request.json();
+        const uname = payload && typeof payload.user === "string" ? payload.user.trim().toLowerCase() : "";
+        if (!uname) {
+          return new Response(JSON.stringify({ ok: false, error: "Invalid user" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        const { data: currentState, sha } = await ghGetFile(STATE_PATH, DEFAULT_STATE);
+        const onlineMap = cleanOnlineMap(currentState.onlineUsers);
+        onlineMap[uname] = { time: Date.now() };
+        const merged = {
+          ...DEFAULT_STATE,
+          ...currentState,
+          onlineUsers: onlineMap
+        };
+        await ghPutFile(STATE_PATH, merged, sha, `Heartbeat online: ${uname}`);
+        return new Response(JSON.stringify({ ok: true, onlineUsers: onlineMap }), {
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
     if (url.pathname === "/api/db/state" && requestMethod === "GET") {
       try {
         const { data: state } = await ghGetFile(STATE_PATH, DEFAULT_STATE);
-        return new Response(JSON.stringify({ ...DEFAULT_STATE, ...state }), {
+        const cleanedOnline = cleanOnlineMap(state.onlineUsers);
+        return new Response(JSON.stringify({ ...DEFAULT_STATE, ...state, onlineUsers: cleanedOnline }), {
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
         });
       } catch (err) {
@@ -235,7 +284,8 @@ export default {
         const merged = {
           ...DEFAULT_STATE,
           ...currentState,
-          ...(incoming && typeof incoming === "object" ? incoming : {})
+          ...(incoming && typeof incoming === "object" ? incoming : {}),
+          onlineUsers: cleanOnlineMap((incoming && incoming.onlineUsers) || currentState.onlineUsers)
         };
         await ghPutFile(STATE_PATH, merged, sha, "Sync Chatty real-time state");
         return new Response(JSON.stringify({ ok: true, state: merged }), {
@@ -442,6 +492,11 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
 .stat-item:hover .stat-num { color: #f43f5e; }
 .stat-num { font-size: 15px; font-weight: bold; color: #38bdf8; }
 
+.checkin-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+.checkin-day-card { background: rgba(15, 23, 42, 0.65); border: 1px solid var(--glass-border); border-radius: 10px; padding: 6px 4px; text-align: center; font-size: 10px; }
+.checkin-day-card.claimed { background: rgba(16, 185, 129, 0.25); border-color: #10b981; color: #6ee7b7; }
+.checkin-day-card.next { border-color: #fbbf24; box-shadow: 0 0 10px rgba(251, 191, 36, 0.4); }
+
 .gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
 .gallery-item { aspect-ratio: 1; border-radius: 8px; overflow: hidden; border: 1px solid var(--glass-border); background: rgba(0,0,0,0.3); position: relative; cursor: pointer; }
 .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
@@ -460,9 +515,10 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
 .autocomplete-item:hover { background: rgba(56, 189, 248, 0.2); }
 
 #nav-bar { background: var(--glass-bg); backdrop-filter: var(--glass-blur); border-top: 1px solid var(--glass-border); display: flex; justify-content: space-around; padding: 6px 0 12px 0; flex-shrink: 0; }
-.nav-item { background: none; border: none; color: rgba(255,255,255,0.5); font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; flex: 1; }
+.nav-item { background: none; border: none; color: rgba(255,255,255,0.5); font-size: 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; flex: 1; position: relative; }
 .nav-item.active { color: #38bdf8; font-weight: 600; }
-.nav-item span.icon { font-size: 18px; }
+.nav-item span.icon { font-size: 17px; }
+.nav-badge-dot { position: absolute; top: 2px; right: 24%; background: #ef4444; color: white; font-size: 8px; padding: 1px 4px; border-radius: 999px; font-weight: bold; display: none; }
 
 #chat-input-area { flex-shrink: 0; width: 100%; }
 #input-container { padding: 8px 12px; background: var(--glass-bg); backdrop-filter: var(--glass-blur); display: flex; gap: 6px; border-top: 1px solid var(--glass-border); width: 100%; }
@@ -542,7 +598,7 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
 <div id="tab-post" class="tab-content" style="display:none; flex-direction:column; height:100%;">
   <div class="card-box" style="margin-bottom:8px;">
     <h3 style="margin-top:0; font-size:15px; color:#38bdf8;">🌐 Live Foto & Postingan Global</h3>
-    <p style="font-size:11px; color:rgba(255,255,255,0.6); margin:0;">Bagikan momen foto, video play, hashtag, & komentar ke semua pengguna.</p>
+    <p style="font-size:11px; color:rgba(255,255,255,0.6); margin:0;">Bagikan momen foto, hashtag, like & komentar ke semua pengguna.</p>
   </div>
   <div id="global-posts-container" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding-bottom:60px;"></div>
   <button class="floating-plus-btn" onclick="openCreatePostModal()">➕</button>
@@ -574,9 +630,21 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
   </div>
 </div>
 
+<div id="tab-inbox" class="tab-content">
+  <div class="card-box">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h3 style="margin:0; font-size:15px; color:#38bdf8;">🔔 Kotak Masuk Notifikasi</h3>
+      <button onclick="clearMyInbox()" style="background:rgba(71,85,105,0.8); border:none; color:white; padding:4px 8px; border-radius:6px; font-size:10px; cursor:pointer;">Bersihkan</button>
+    </div>
+    <p style="font-size:11px; color:rgba(255,255,255,0.6); margin:4px 0 0 0;">Permintaan follow akun privat, like postingan, dan pengikut baru.</p>
+  </div>
+  <div id="inbox-notifications-list" style="display:flex; flex-direction:column; gap:6px;"></div>
+</div>
+
 <div id="tab-profile" class="tab-content">
   <div class="card-box" style="text-align:center;">
-    <div style="display: flex; justify-content: flex-end; margin-bottom: 4px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+      <button id="privacy-toggle-btn" onclick="toggleMyPrivacyMode()" style="background:rgba(2,132,199,0.25); color:#7dd3fc; border:1px solid rgba(56,189,248,0.5); padding:5px 10px; border-radius:8px; font-size:10px; font-weight:700; cursor:pointer;">🌐 Akun: Publik</button>
       <button onclick="logoutAccount()" style="background:rgba(220,38,38,0.85); color:white; border:1px solid rgba(255,255,255,0.2); padding:5px 10px; border-radius:8px; font-size:10px; font-weight:600; cursor:pointer;">🚪 Log Out</button>
     </div>
     <div style="width:65px; height:65px; margin:0 auto 10px; display:flex; align-items:center; justify-content:center;" id="profile-avatar-box"></div>
@@ -588,10 +656,20 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
     </div>
     <textarea id="profile-bio-input" class="bio-textarea" placeholder="Tulis bio singkat tentang dirimu..." maxlength="120" onchange="saveMyBio(this.value)"></textarea>
     <div class="profile-stats">
-      <div class="stat-item"><span>Pengikut</span><span class="stat-num" id="my-followers-count">0</span></div>
-      <div class="stat-item" onclick="openFollowingModal()"><span>Mengikuti</span><span class="stat-num" id="my-following-count">0</span></div>
+      <div class="stat-item" onclick="openFollowListModal(currentUser, 'followers')"><span>Pengikut</span><span class="stat-num" id="my-followers-count">0</span></div>
+      <div class="stat-item" onclick="openFollowListModal(currentUser, 'following')"><span>Mengikuti</span><span class="stat-num" id="my-following-count">0</span></div>
       <div class="stat-item"><span>Koin</span><span class="stat-num" id="user-coins">50</span></div>
     </div>
+
+    <div style="text-align:left; background:rgba(15,23,42,0.55); border:1px solid var(--glass-border); border-radius:12px; padding:10px; margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <b style="font-size:12px; color:#fbbf24;">📅 Check-In Harian 7 Hari (Pengguna Baru)</b>
+        <span id="checkin-streak-badge" style="font-size:10px; color:#38bdf8; font-weight:bold;">Hari 0/7</span>
+      </div>
+      <div class="checkin-grid" id="checkin-week-grid"></div>
+      <button id="claim-weekly-checkin-btn" onclick="claimWeeklyCheckin()" style="width:100%; margin-top:8px; padding:7px; background:linear-gradient(135deg,#10b981,#059669); border:none; color:white; border-radius:8px; font-weight:bold; font-size:11px; cursor:pointer;">🎁 Klaim Check-In Hari Ini</button>
+    </div>
+
     <h4 style="text-align:left; font-size:13px; color:#38bdf8; margin:8px 0 4px 0;">🖼️ Galeri Foto Saya</h4>
     <button onclick="document.getElementById('file-gallery-upload').click()" style="width:100%; padding:7px; background:rgba(16,185,129,0.8); color:white; border-radius:8px; border:none; font-weight:600; font-size:11px; cursor:pointer; margin-bottom:6px;">➕ Tambah Foto ke Galeri</button>
     <input type="file" id="file-gallery-upload" accept="image/*" style="display:none;" onchange="uploadGalleryPhoto(event)">
@@ -637,11 +715,11 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
   </div>
 </div>
 
-<div id="following-modal" class="modal-overlay" onclick="document.getElementById('following-modal').style.display='none'">
-  <div class="modal-content" onclick="event.stopPropagation()" style="max-width:320px; text-align:left;">
-    <h3 style="color:#38bdf8; margin-top:0; font-size:15px;">👥 Daftar Akun Yang Anda Ikuti</h3>
-    <div id="following-users-list" style="max-height:200px; overflow-y:auto; width:100%; display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
-    <button onclick="document.getElementById('following-modal').style.display='none'" style="width:100%; background:rgba(71,85,105,0.8); border:none; color:white; padding:7px; border-radius:8px; cursor:pointer; font-size:12px;">Tutup</button>
+<div id="follow-list-modal" class="modal-overlay" onclick="document.getElementById('follow-list-modal').style.display='none'">
+  <div class="modal-content" onclick="event.stopPropagation()" style="max-width:330px; text-align:left;">
+    <h3 id="follow-list-modal-title" style="color:#38bdf8; margin-top:0; font-size:15px;">👥 Daftar</h3>
+    <div id="follow-list-modal-body" style="max-height:240px; overflow-y:auto; width:100%; display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
+    <button onclick="document.getElementById('follow-list-modal').style.display='none'" style="width:100%; background:rgba(71,85,105,0.8); border:none; color:white; padding:7px; border-radius:8px; cursor:pointer; font-size:12px;">Tutup</button>
   </div>
 </div>
 
@@ -675,9 +753,11 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
       <h3 id="modal-username" style="margin:0; color:#38bdf8; font-size:16px;">Username</h3>
       <span id="modal-vip-badge-container"></span>
     </div>
+    <div id="modal-privacy-tag" style="font-size:10px; color:#fbbf24; margin-bottom:4px;"></div>
     <p id="modal-user-bio" style="font-size:12px; color:rgba(255,255,255,0.8); background:rgba(15,23,42,0.4); padding:6px 10px; border-radius:8px; width:100%; margin-bottom:8px;"></p>
     <div style="display:flex; justify-content:space-around; width:100%; font-size:12px; margin-bottom:10px;">
-      <div>Pengikut: <b id="modal-followers-num">0</b></div>
+      <div style="cursor:pointer;" onclick="openFollowListModal(viewingUser, 'followers')">Pengikut: <b id="modal-followers-num" style="color:#38bdf8;">0</b></div>
+      <div style="cursor:pointer;" onclick="openFollowListModal(viewingUser, 'following')">Mengikuti: <b id="modal-following-num" style="color:#38bdf8;">0</b></div>
     </div>
     <div style="display:flex; gap:6px; width:100%; margin-bottom:10px;">
       <button id="modal-follow-btn" onclick="toggleFollowUser()" style="flex:1; padding:8px; background:#10b981; border:none; color:white; border-radius:8px; font-weight:bold; cursor:pointer; font-size:12px;">➕ Ikuti</button>
@@ -715,11 +795,18 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
       </div>
       <button onclick="loadSecurityAuditLogs()" style="background:#dc2626; border:none; color:white; padding:5px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%; font-size:11px;">🔄 Muat Ulang Log Keamanan</button>
     </div>
+
     <div class="dev-section" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.4);">
-      <h4 style="margin:0 0 5px 0; color:#34d399; font-size:13px;">🎵 Custom Audio Notifikasi Developer</h4>
-      <input type="file" id="dev-notification-audio-file" accept="audio/*" onchange="uploadCustomNotificationAudio(event)" style="font-size:11px; color:#cbd5e1; margin-bottom:5px; width:100%;">
-      <button onclick="testCustomNotificationAudio()" style="background:#059669; border:none; color:white; padding:6px 10px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%; font-size:11px;">🔊 Tes Putar Suara Notifikasi</button>
+      <h4 style="margin:0 0 5px 0; color:#34d399; font-size:13px;">🎵 Kostum Suara Notifikasi (Terpisah)</h4>
+      <div style="font-size:11px; color:#cbd5e1; margin-bottom:3px;">📢 Suara Pengumuman Global:</div>
+      <input type="file" id="dev-ann-audio-file" accept="audio/*" onchange="uploadCustomAnnouncementAudio(event)" style="font-size:10px; color:#cbd5e1; margin-bottom:4px; width:100%;">
+      <button onclick="testCustomAudio('announcement')" style="background:#059669; border:none; color:white; padding:4px 8px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%; font-size:10px; margin-bottom:8px;">🔊 Tes Suara Pengumuman</button>
+
+      <div style="font-size:11px; color:#fbbf24; margin-bottom:3px;">👑 Suara Admin / Developer Datang:</div>
+      <input type="file" id="dev-online-audio-file" accept="audio/*" onchange="uploadCustomDevOnlineAudio(event)" style="font-size:10px; color:#cbd5e1; margin-bottom:4px; width:100%;">
+      <button onclick="testCustomAudio('dev_online')" style="background:#d97706; border:none; color:white; padding:4px 8px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%; font-size:10px;">🔊 Tes Suara Admin Datang</button>
     </div>
+
     <div class="dev-section" style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.4);">
       <h4 style="margin:0 0 5px 0; color:#fbbf24; font-size:13px;">⚠️ Laporan Kehilangan Akun (<span id="lost-report-count">0</span>)</h4>
       <div id="dev-lost-reports-list" style="max-height:100px; overflow-y:auto; display:flex; flex-direction:column; gap:5px; margin-bottom:5px;"></div>
@@ -748,9 +835,12 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
         <option value="acc_dev_angel">👼 Sayap Malaikat Suci Bersinar</option>
       </select>
     </div>
-    <div class="dev-section" style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.4);">
-      <h4 style="margin:0 0 5px 0; color:#fbbf24; font-size:13px;">👑 Give Premium ke Username</h4>
-      <select id="dev-give-user-target" style="width:100%; padding:7px; background:rgba(15,23,42,0.8); color:white; border:1px solid var(--glass-border); border-radius:6px; margin-bottom:5px; outline:none; font-size:12px;"></select>
+
+    <div class="dev-section" style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.4); position:relative;">
+      <h4 style="margin:0 0 5px 0; color:#fbbf24; font-size:13px;">👑 Gift Premium (Search Username)</h4>
+      <input type="text" id="dev-gift-prem-search" placeholder="🔍 Ketik username target premium..." oninput="handleGiftSearchInput('prem', this.value)" autocomplete="off" style="width:100%; padding:7px; background:rgba(15,23,42,0.8); color:white; border:1px solid var(--glass-border); border-radius:6px; margin-bottom:4px; outline:none; font-size:11px;">
+      <div id="dev-gift-prem-dropdown" class="autocomplete-dropdown"></div>
+      <div style="font-size:10px; color:#fbbf24; margin-bottom:4px;">Target: <b id="dev-gift-prem-selected">-</b></div>
       <select id="dev-give-tier" style="width:100%; padding:7px; background:rgba(15,23,42,0.8); color:#fbbf24; font-weight:bold; border:1px solid var(--glass-border); border-radius:6px; margin-bottom:6px; outline:none; font-size:12px;">
         <option value="2days">👑 Premium 2 Hari</option>
         <option value="1month">👑 Premium 1 Bulan</option>
@@ -759,6 +849,7 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
       </select>
       <button onclick="devExecuteGivePremium()" style="background:linear-gradient(135deg, #f59e0b, #d97706); border:none; color:white; padding:7px 12px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%; font-size:11px;">Berikan Paket Premium Sekarang</button>
     </div>
+
     <div class="dev-section" style="background: rgba(220, 38, 38, 0.15); border-color: rgba(220, 38, 38, 0.4);">
       <h4 style="margin:0 0 5px 0; color:#ef4444; font-size:13px;">🗑️ Hapus Seluruh Chat Global</h4>
       <button onclick="clearGlobalChat()" style="background:#ef4444; border:none; color:white; padding:7px 12px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%; font-size:11px;">Hapus Semua Chat Global</button>
@@ -786,7 +877,7 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
       <button onclick="sendGlobalAnnouncement()" style="background:#3b82f6; border:none; color:white; padding:7px 12px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%; font-size:11px;">Kirim Pengumuman</button>
     </div>
     <div class="dev-section" style="position: relative;">
-      <h4 style="margin:0 0 6px 0; color:#38bdf8; font-size:13px;">🤖 Bot Otomatis</h4>
+      <h4 style="margin:0 0 6px 0; color:#38bdf8; font-size:13px;">🤖 Bot Otomatis (Follower Visual-Only)</h4>
       <div style="position: relative; margin-bottom: 5px;">
         <input type="text" id="dev-bot-search" placeholder="🔍 Ketik username target bot..." oninput="handleBotSearchInput(this.value)" autocomplete="off" style="width:100%; padding:8px 10px; background:rgba(15,23,42,0.8); color:white; border:1px solid var(--glass-border); border-radius:6px; font-size:11px; outline:none;">
         <div id="bot-autocomplete-dropdown" class="autocomplete-dropdown"></div>
@@ -795,7 +886,7 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
       <div id="bot-photo-picker-container" class="bot-photo-picker-grid"></div>
       <input type="number" id="dev-bot-custom-amount" value="50" min="1" max="100000000" style="width:100%; padding:7px 8px; background:rgba(15,23,42,0.8); color:#38bdf8; font-weight:bold; border:1px solid var(--glass-border); border-radius:6px; font-size:12px; outline:none; margin-bottom:6px;">
       <div style="display:flex; gap:6px;">
-        <button onclick="runBotAddFollowers()" style="flex:1; background:#8b5cf6; border:none; color:white; padding:7px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:11px;">🤖 +Followers</button>
+        <button onclick="runBotAddFollowers()" style="flex:1; background:#8b5cf6; border:none; color:white; padding:7px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:11px;">🤖 +Followers (Visual)</button>
         <button onclick="runBotAddLikesToTargetPhoto()" style="flex:1; background:#ec4899; border:none; color:white; padding:7px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:11px;">🤖 +Likes Foto Pilihan</button>
       </div>
     </div>
@@ -820,14 +911,18 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
       <input type="text" id="dev-ban-reason-input" placeholder="📝 Alasan ban..." style="width:100%; padding:7px; background:rgba(15,23,42,0.6); color:white; border:1px solid var(--glass-border); border-radius:6px; font-size:11px; outline:none; margin-bottom:5px;">
       <div id="dev-ban-list" style="max-height:70px; overflow-y:auto; display:flex; flex-direction:column; gap:5px;"></div>
     </div>
-    <div class="dev-section">
-      <h4 style="margin:0 0 6px 0; color:#38bdf8; font-size:13px;">💰 Berikan Koin ke Pengguna</h4>
-      <select id="dev-coin-target" style="width:100%; padding:7px; background:rgba(15,23,42,0.6); color:white; border:1px solid var(--glass-border); border-radius:6px; margin-bottom:5px; outline:none; font-size:11px;"></select>
+
+    <div class="dev-section" style="position:relative;">
+      <h4 style="margin:0 0 6px 0; color:#38bdf8; font-size:13px;">💰 Gift Koin (Search Username)</h4>
+      <input type="text" id="dev-gift-coin-search" placeholder="🔍 Ketik username target koin..." oninput="handleGiftSearchInput('coin', this.value)" autocomplete="off" style="width:100%; padding:7px; background:rgba(15,23,42,0.8); color:white; border:1px solid var(--glass-border); border-radius:6px; margin-bottom:4px; outline:none; font-size:11px;">
+      <div id="dev-gift-coin-dropdown" class="autocomplete-dropdown"></div>
+      <div style="font-size:10px; color:#38bdf8; margin-bottom:4px;">Target: <b id="dev-gift-coin-selected">-</b></div>
       <div style="display:flex; gap:6px;">
         <input type="number" id="dev-coin-amount" placeholder="Jumlah koin..." value="100" style="flex:1; padding:7px; background:rgba(15,23,42,0.6); color:white; border:1px solid var(--glass-border); border-radius:6px; outline:none; font-size:11px;">
         <button onclick="devGiveCoins()" style="background:#10b981; border:none; color:white; padding:7px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:11px;">Kirim</button>
       </div>
     </div>
+
     <button onclick="closeDevModal()" style="background:rgba(71,85,105,0.8); color:white; border:none; padding:8px; width:100%; border-radius:8px; cursor:pointer; font-weight:600; font-size:12px;">Tutup Panel</button>
   </div>
 </div>
@@ -847,6 +942,7 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
   <button class="nav-item active" onclick="switchTab('chat', this)"><span class="icon">💬</span> Chat</button>
   <button class="nav-item" onclick="switchTab('post', this)"><span class="icon">📷</span> Live Foto</button>
   <button class="nav-item" onclick="switchTab('dm', this)"><span class="icon">🔒</span> DM</button>
+  <button class="nav-item" onclick="switchTab('inbox', this)"><span class="icon">🔔</span> Kotak Masuk<span id="inbox-nav-badge" class="nav-badge-dot">0</span></button>
   <button class="nav-item" onclick="switchTab('profile', this)"><span class="icon">👤</span> Profil</button>
   <button class="nav-item" onclick="switchTab('shop', this)"><span class="icon">🛒</span> Toko</button>
 </nav>
@@ -865,28 +961,31 @@ function sanitizeHTML(str) {
 }
 
 function formatCompactNumber(num) {
-  if (num >= 1000000000) return (num / 1000000000).toFixed(1).replace(/\\.0$/, '') + 'M';
-  if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\\.0$/, '') + 'JT';
-  if (num >= 1000) return (num / 1000).toFixed(1).replace(/\\.0$/, '') + 'K';
+  if (num >= 1000000000) return (num / 1000000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'JT';
+  if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
   return num.toString();
 }
 
+const WEEKLY_CHECKIN_REWARDS = [25, 50, 75, 100, 150, 200, 350];
+
+// Harga toko dinaikkan biar makin cuan
 const BORDER_SHAPES = [
   { id: "shape_circle", name: "Border Lingkaran Klasik", class: "border-circle", price: 0 },
-  { id: "shape_smooth_rect", name: "Border Kotak Melengkung", class: "border-smooth-rect", price: 50 },
-  { id: "shape_hexagon", name: "Border Hexagon (Segi Enam)", class: "border-hexagon", price: 100 },
-  { id: "shape_diamond", name: "Border Diamond (Belah Ketupat)", class: "border-diamond", price: 150 },
-  { id: "shape_octagon", name: "Border Octagon (Segi Delapan)", class: "border-octagon", price: 200 },
-  { id: "shape_star", name: "Border Bintang Mewah", class: "border-star", price: 300 }
+  { id: "shape_smooth_rect", name: "Border Kotak Melengkung", class: "border-smooth-rect", price: 150 },
+  { id: "shape_hexagon", name: "Border Hexagon (Segi Enam)", class: "border-hexagon", price: 280 },
+  { id: "shape_diamond", name: "Border Diamond (Belah Ketupat)", class: "border-diamond", price: 420 },
+  { id: "shape_octagon", name: "Border Octagon (Segi Delapan)", class: "border-octagon", price: 560 },
+  { id: "shape_star", name: "Border Bintang Mewah", class: "border-star", price: 850 }
 ];
 
 const BORDER_ACCESSORIES = [
   { id: "acc_none", name: "Tanpa Aksesoris", emoji: "", price: 0 },
-  { id: "acc_crown", name: "Mahkota Emas (👑)", emoji: "👑", price: 100 },
-  { id: "acc_diamond", name: "Berlian Bersinar (💎)", emoji: "💎", price: 150 },
-  { id: "acc_star", name: "Bintang Berkilau (⭐)", emoji: "⭐", price: 120 },
-  { id: "acc_fire", name: "Api Menyala (🔥)", emoji: "🔥", price: 130 },
-  { id: "acc_heart", name: "Hati Cinta (💖)", emoji: "💖", price: 110 }
+  { id: "acc_crown", name: "Mahkota Emas (👑)", emoji: "👑", price: 300 },
+  { id: "acc_diamond", name: "Berlian Bersinar (💎)", emoji: "💎", price: 450 },
+  { id: "acc_star", name: "Bintang Berkilau (⭐)", emoji: "⭐", price: 360 },
+  { id: "acc_fire", name: "Api Menyala (🔥)", emoji: "🔥", price: 390 },
+  { id: "acc_heart", name: "Hati Cinta (💖)", emoji: "💖", price: 330 }
 ];
 
 const DEV_SUPREME_ACCESSORIES = {
@@ -927,8 +1026,8 @@ function getEffectStyleData(itemId) {
   let base = THEME_PALETTES[idx % THEME_PALETTES.length];
   let hueOffset = Math.floor(idx / THEME_PALETTES.length) * 65;
   return {
-    name: \`\${base.name} #\${idx + 1}\`,
-    price: 100 + (idx * 15),
+    name: `${base.name} #${idx + 1}`,
+    price: 300 + (idx * 45),
     c1: base.c1,
     c2: base.c2,
     bg: base.bg,
@@ -941,7 +1040,7 @@ function getFontStyleData(itemId) {
   let idx = parseInt(itemId.split('_')[1]);
   if(isNaN(idx)) return null;
   let base = FONT_STYLES[idx % FONT_STYLES.length];
-  return { name: \`\${base.name} #\${idx + 1}\`, price: 80 + (idx * 10), style: base.style };
+  return { name: `${base.name} #${idx + 1}`, price: 250 + (idx * 35), style: base.style };
 }
 
 function playWindowsStartupSound() {
@@ -962,12 +1061,19 @@ function playWindowsStartupSound() {
   } catch(e) {}
 }
 
+let announcementAudioData = "";
+let devOnlineAudioData = "";
+
 function playSoundEffect(type) {
   try {
-    let customAudioSrc = localStorage.getItem('chat_custom_notif_audio');
-    if(customAudioSrc && (type === 'announcement' || type === 'dev_online')) {
-      let customAudio = new Audio(customAudioSrc);
-      customAudio.play().catch(() => {});
+    if (type === 'announcement' && announcementAudioData) {
+      const aud = new Audio(announcementAudioData);
+      aud.play().catch(() => {});
+      return;
+    }
+    if (type === 'dev_online' && devOnlineAudioData) {
+      const aud = new Audio(devOnlineAudioData);
+      aud.play().catch(() => {});
       return;
     }
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -993,22 +1099,36 @@ function playSoundEffect(type) {
   } catch(e) {}
 }
 
-function uploadCustomNotificationAudio(event) {
+async function uploadCustomAnnouncementAudio(event) {
   if(currentUser !== DEV_NAME) return;
   const file = event.target.files[0];
-  if(file) {
-    if(file.size > 3 * 1024 * 1024) { alert("Ukuran file audio maksimal 3MB."); return; }
-    const reader = new FileReader();
-    reader.onload = function(ev) {
-      localStorage.setItem('chat_custom_notif_audio', ev.target.result);
-      alert("🎵 Audio notifikasi kustom berhasil disimpan!");
-    };
-    reader.readAsDataURL(file);
-  }
+  if(!file) return;
+  if(file.size > 2.5 * 1024 * 1024) { alert("Ukuran file audio maksimal 2.5MB."); return; }
+  const reader = new FileReader();
+  reader.onload = async function(ev) {
+    announcementAudioData = ev.target.result;
+    await pushGitHubState({ announcementAudio: announcementAudioData });
+    alert("📢 Suara kostum pengumuman berhasil disimpan & disinkronkan!");
+  };
+  reader.readAsDataURL(file);
 }
 
-function testCustomNotificationAudio() {
-  playSoundEffect('announcement');
+async function uploadCustomDevOnlineAudio(event) {
+  if(currentUser !== DEV_NAME) return;
+  const file = event.target.files[0];
+  if(!file) return;
+  if(file.size > 2.5 * 1024 * 1024) { alert("Ukuran file audio maksimal 2.5MB."); return; }
+  const reader = new FileReader();
+  reader.onload = async function(ev) {
+    devOnlineAudioData = ev.target.result;
+    await pushGitHubState({ devOnlineAudio: devOnlineAudioData });
+    alert("👑 Suara kostum admin/developer datang berhasil disimpan & disinkronkan!");
+  };
+  reader.readAsDataURL(file);
+}
+
+function testCustomAudio(kind) {
+  playSoundEffect(kind);
 }
 
 // --- STATE RUNTIME (DISINKRONKAN KE GITHUB DB) ---
@@ -1017,10 +1137,16 @@ let currentAvatar = "";
 let userCoins = 50;
 let ownedItems = [];
 let userDatabase = {};
+let onlineUsersMap = {};
 let bannedUsers = [];
 let userBios = {};
 let userGalleries = {};
 let userFollowers = {};
+let botFollowerBoost = {};
+let followRequests = {};
+let accountPrivacy = {};
+let inboxNotifications = {};
+let checkinProgress = {};
 let userBlocks = {};
 let userProfilesMeta = {};
 let userVipStatus = {};
@@ -1036,12 +1162,88 @@ let activeDevTheme = 'rgb_rainbow';
 let activeDevAccessory = 'acc_dev_crown';
 let devLoginNotificationText = "👑 DEVELOPER RGB LAGI ON NIH! Sapa developer yuk!";
 let lastAnnouncementKey = "";
+let lastDevOnlineKey = "";
 let currentReplyData = null;
+
+function getActiveOnlineMap() {
+  const now = Date.now();
+  const active = {};
+  if (!onlineUsersMap || typeof onlineUsersMap !== "object") return active;
+  for (const [uname, entry] of Object.entries(onlineUsersMap)) {
+    const lastSeen = typeof entry === "number" ? entry : (entry && entry.time) || 0;
+    if (now - lastSeen < 20000) {
+      active[uname] = entry;
+    }
+  }
+  return active;
+}
+
+function renderOnlineCounterUI() {
+  const active = getActiveOnlineMap();
+  const count = Math.max(Object.keys(active).length, currentUser ? 1 : 0);
+  const countText = document.getElementById('online-count-text');
+  if (countText) countText.textContent = `${count} orang online`;
+}
+
+function getFollowerDisplayCount(username) {
+  const realCount = (userFollowers[username] || []).length;
+  const botCount = Number(botFollowerBoost[username] || 0);
+  return realCount + botCount;
+}
+
+function getFollowingUsers(username) {
+  const res = [];
+  for (const u in userFollowers) {
+    if ((userFollowers[u] || []).includes(username)) {
+      res.push(u);
+    }
+  }
+  return res;
+}
+
+function canViewPrivateProfile(targetUser) {
+  if (!targetUser || targetUser === currentUser || currentUser === DEV_NAME) return true;
+  if (!accountPrivacy[targetUser]) return true;
+  return (userFollowers[targetUser] || []).includes(currentUser);
+}
+
+async function pushInboxNotification(targetUser, notifObj) {
+  if (!targetUser || targetUser === currentUser) return;
+  if (!inboxNotifications[targetUser]) inboxNotifications[targetUser] = [];
+  inboxNotifications[targetUser].unshift({
+    id: 'notif_' + Date.now() + '_' + Math.random(),
+    from: currentUser,
+    time: Date.now(),
+    ...notifObj
+  });
+  if (inboxNotifications[targetUser].length > 50) {
+    inboxNotifications[targetUser].length = 50;
+  }
+  await pushGitHubState({ inboxNotifications });
+}
+
+function renderInboxBadge() {
+  const badge = document.getElementById('inbox-nav-badge');
+  if (!badge || !currentUser) return;
+  const list = inboxNotifications[currentUser] || [];
+  const pendingReq = ((followRequests || {})[currentUser] || []).length;
+  const total = list.length + pendingReq;
+  if (total > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = total > 99 ? '99+' : String(total);
+  } else {
+    badge.style.display = 'none';
+  }
+}
 
 function applyRemoteState(state) {
   if (!state || typeof state !== "object") return;
   userDatabase = state.users || {};
   if (!userDatabase[DEV_NAME]) userDatabase[DEV_NAME] = DEV_PASS;
+
+  if (state.onlineUsers && typeof state.onlineUsers === "object") {
+    onlineUsersMap = state.onlineUsers;
+  }
 
   messages = Array.isArray(state.messages) ? state.messages : [];
   dmMessages = Array.isArray(state.dms) ? state.dms : [];
@@ -1053,6 +1255,11 @@ function applyRemoteState(state) {
   userBios = state.bios || {};
   userGalleries = state.galleries || {};
   userFollowers = state.followers || {};
+  botFollowerBoost = state.botFollowerBoost || {};
+  followRequests = state.followRequests || {};
+  accountPrivacy = state.accountPrivacy || {};
+  inboxNotifications = state.inboxNotifications || {};
+  checkinProgress = state.checkinProgress || {};
   userBlocks = state.blocks || {};
   userProfilesMeta = state.profilesMeta || {};
   userVipStatus = state.vipStatus || {};
@@ -1062,6 +1269,8 @@ function applyRemoteState(state) {
   if (state.devTheme) activeDevTheme = state.devTheme;
   if (state.devAccessory) activeDevAccessory = state.devAccessory;
   if (state.devLoginMsg) devLoginNotificationText = state.devLoginMsg;
+  if (typeof state.announcementAudio === "string") announcementAudioData = state.announcementAudio;
+  if (typeof state.devOnlineAudio === "string") devOnlineAudioData = state.devOnlineAudio;
 
   if (currentUser) {
     const coinsMap = state.coins || {};
@@ -1078,6 +1287,17 @@ function applyRemoteState(state) {
       if (meta.fontEffect) activeFontEffect = meta.fontEffect;
       if (meta.shape) activeBorderShape = meta.shape;
       if (meta.accessory) activeAccessory = meta.accessory;
+    }
+  }
+
+  const activeOnline = getActiveOnlineMap();
+  if (currentUser && currentUser !== DEV_NAME && activeOnline[DEV_NAME]) {
+    const devEntry = activeOnline[DEV_NAME];
+    const devKey = DEV_NAME + "_" + ((devEntry && devEntry.time) || "on");
+    if (devKey !== lastDevOnlineKey) {
+      lastDevOnlineKey = devKey;
+      playSoundEffect('dev_online');
+      showAnnouncementBanner(devLoginNotificationText, 8000);
     }
   }
 
@@ -1104,11 +1324,18 @@ async function pullGitHubState() {
       return;
     }
 
+    renderOnlineCounterUI();
+    renderInboxBadge();
     updateCoinsDisplay();
     renderMessages();
     renderGlobalPosts();
     if (activeDMTarget) renderDM(activeDMTarget);
-    renderDMProfileList();
+    if (document.getElementById('tab-dm') && document.getElementById('tab-dm').style.display === 'flex') {
+      renderDMProfileList();
+    }
+    if (document.getElementById('tab-inbox') && document.getElementById('tab-inbox').style.display === 'flex') {
+      renderInboxNotifications();
+    }
     if (document.getElementById('tab-profile').style.display === 'flex') updateProfileView();
   } catch (e) {
     console.error("Gagal sinkronisasi state GitHub:", e);
@@ -1117,29 +1344,7 @@ async function pullGitHubState() {
 
 async function pushGitHubState(partialPatch) {
   try {
-    const payload = partialPatch || {
-      users: userDatabase,
-      messages,
-      dms: dmMessages,
-      posts: globalPosts,
-      banned: bannedUsers,
-      bugReports,
-      lostReports,
-      bios: userBios,
-      galleries: userGalleries,
-      followers: userFollowers,
-      blocks: userBlocks,
-      profilesMeta: userProfilesMeta,
-      vipStatus: userVipStatus,
-      passStatus: userPassStatus,
-      dailyClaim: userDailyClaim,
-      devTheme: activeDevTheme,
-      devAccessory: activeDevAccessory,
-      devLoginMsg: devLoginNotificationText,
-      coins: { ...(userDatabase && {}), [currentUser]: userCoins },
-      ownedItems: { [currentUser]: ownedItems }
-    };
-
+    const payload = partialPatch || {};
     if (currentUser) {
       payload.coins = { ...(payload.coins || {}), [currentUser]: userCoins };
       payload.ownedItems = { ...(payload.ownedItems || {}), [currentUser]: ownedItems };
@@ -1249,24 +1454,32 @@ function showAnnouncementBanner(text, duration = 10000) {
   activeBannerTimer = setTimeout(() => { banner.classList.remove('show'); }, duration);
 }
 
-function updateOnlinePresence() {
+async function updateOnlinePresence() {
   if (!currentUser) return;
-  let onlineMap = JSON.parse(localStorage.getItem('chat_online_users') || "{}");
-  onlineMap[currentUser] = Date.now();
-  let now = Date.now();
-  let activeCount = 0;
-  for (let u in onlineMap) {
-    if (now - onlineMap[u] < 15000) activeCount++;
-    else delete onlineMap[u];
-  }
-  localStorage.setItem('chat_online_users', JSON.stringify(onlineMap));
-  let countText = document.getElementById('online-count-text');
-  if(countText) countText.textContent = \`\${activeCount} orang online\`;
-  if(document.getElementById('tab-dm') && document.getElementById('tab-dm').style.display === 'flex') {
+  onlineUsersMap[currentUser] = { time: Date.now() };
+  renderOnlineCounterUI();
+  if (document.getElementById('tab-dm') && document.getElementById('tab-dm').style.display === 'flex') {
     renderDMProfileList();
   }
+  try {
+    const res = await fetch('/api/online/ping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: currentUser })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.onlineUsers) {
+        onlineUsersMap = data.onlineUsers;
+        renderOnlineCounterUI();
+        if (document.getElementById('tab-dm') && document.getElementById('tab-dm').style.display === 'flex') {
+          renderDMProfileList();
+        }
+      }
+    }
+  } catch (_) {}
 }
-setInterval(updateOnlinePresence, 3000);
+setInterval(updateOnlinePresence, 5000);
 setInterval(pullGitHubState, 4000);
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -1294,7 +1507,7 @@ window.onload = async function() {
       location.reload();
       return;
     }
-    if(customBgImage) document.body.style.setProperty('background-image', \`url(\${customBgImage})\`);
+    if(customBgImage) document.body.style.setProperty('background-image', `url(${customBgImage})`);
 
     if (currentUser && userDatabase[currentUser]) {
       let loginScreen = document.getElementById('login-screen');
@@ -1355,9 +1568,11 @@ async function handleLoginRegister() {
 
     if(!userDatabase[name]) {
       userDatabase[name] = pass;
+      checkinProgress[name] = { day: 0, lastClaimDate: "" };
       await pushGitHubState({
         users: userDatabase,
-        coins: { [name]: 50 }
+        coins: { [name]: 50 },
+        checkinProgress
       });
     } else if(userDatabase[name] !== pass) {
       alert("Password salah!");
@@ -1390,6 +1605,7 @@ function setupUserSession() {
     showAnnouncementBanner(devLoginNotificationText, 10000);
   }
   syncUserMeta();
+  renderInboxBadge();
   updateCoinsDisplay();
   renderShopCategory('vip', document.querySelector('.shop-cat-btn'));
   updateProfileView();
@@ -1417,12 +1633,155 @@ function switchTab(tabName, element) {
   } else {
     if(inputArea) inputArea.style.display = 'none';
     if(tabName === 'dm') renderDMProfileList();
+    if(tabName === 'inbox') renderInboxNotifications();
     if(tabName === 'post') renderGlobalPosts();
     if(tabName === 'profile') updateProfileView();
     if(tabName === 'shop') renderShopCategory(currentShopCat, document.querySelector('.shop-cat-btn.active'));
   }
 }
 
+// --- CHECK-IN HARIAN 7 HARI (PENGGUNA BARU) ---
+function renderWeeklyCheckinUI() {
+  const grid = document.getElementById('checkin-week-grid');
+  const badge = document.getElementById('checkin-streak-badge');
+  const btn = document.getElementById('claim-weekly-checkin-btn');
+  if (!grid || !currentUser) return;
+
+  const prog = checkinProgress[currentUser] || { day: 0, lastClaimDate: "" };
+  const today = new Date().toDateString();
+  const alreadyToday = prog.lastClaimDate === today;
+  const nextDayIndex = alreadyToday ? prog.day : Math.min(prog.day + 1, 7);
+
+  if (badge) badge.textContent = `Hari ${prog.day}/7`;
+
+  grid.innerHTML = '';
+  WEEKLY_CHECKIN_REWARDS.forEach((reward, idx) => {
+    const dayNum = idx + 1;
+    const isClaimed = dayNum <= prog.day;
+    const isNext = !alreadyToday && dayNum === nextDayIndex;
+    let cls = 'checkin-day-card';
+    if (isClaimed) cls += ' claimed';
+    else if (isNext) cls += ' next';
+    grid.innerHTML += `
+      <div class="${cls}">
+        <div style="font-weight:bold;">Hari ${dayNum}</div>
+        <div style="color:#fbbf24;">+${reward} 💰</div>
+        <div>${isClaimed ? '✓' : '🔒'}</div>
+      </div>`;
+  });
+
+  if (btn) {
+    if (alreadyToday) {
+      btn.textContent = `✅ Check-In Hari Ini Sudah Diklaim (Hari ${prog.day}/7)`;
+      btn.disabled = true;
+      btn.style.opacity = '0.6';
+    } else {
+      const rewardAmt = WEEKLY_CHECKIN_REWARDS[nextDayIndex - 1];
+      btn.textContent = `🎁 Klaim Check-In Hari ${nextDayIndex} (+${rewardAmt} Koin)`;
+      btn.disabled = false;
+      btn.style.opacity = '1';
+    }
+  }
+}
+
+async function claimWeeklyCheckin() {
+  if (!currentUser) return;
+  const prog = checkinProgress[currentUser] || { day: 0, lastClaimDate: "" };
+  const today = new Date().toDateString();
+  if (prog.lastClaimDate === today) {
+    alert("Kamu sudah check-in hari ini!");
+    return;
+  }
+  const nextDay = prog.day >= 7 ? 1 : prog.day + 1;
+  const reward = WEEKLY_CHECKIN_REWARDS[nextDay - 1];
+  userCoins += reward;
+  checkinProgress[currentUser] = { day: nextDay, lastClaimDate: today };
+
+  updateCoinsDisplay();
+  renderWeeklyCheckinUI();
+  await pushGitHubState({
+    coins: { [currentUser]: userCoins },
+    checkinProgress
+  });
+  alert(`🎉 Check-in Hari ${nextDay} berhasil! Kamu dapat +${reward} Koin!`);
+}
+
+// --- MODE PRIVASI AKUN ALA TIKTOK ---
+async function toggleMyPrivacyMode() {
+  if (!currentUser) return;
+  accountPrivacy[currentUser] = !accountPrivacy[currentUser];
+  updateProfileView();
+  await pushGitHubState({ accountPrivacy });
+  alert(accountPrivacy[currentUser]
+    ? "🔒 Mode Akun PRIVAT aktif! User lain harus follow & nunggu di-ACC untuk lihat foto profil & galeri."
+    : "🌐 Mode Akun PUBLIK aktif! Semua user bisa melihat foto profil & galeri.");
+}
+
+// --- KOTAK MASUK NOTIFIKASI (FOLLOW REQUEST, LIKE, FOLLOW) ---
+function renderInboxNotifications() {
+  const container = document.getElementById('inbox-notifications-list');
+  if (!container || !currentUser) return;
+  container.innerHTML = '';
+
+  const reqList = (followRequests[currentUser] || []);
+  reqList.forEach(reqUser => {
+    container.innerHTML += `
+      <div class="card-box" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:0;">
+        <div style="font-size:12px;">🔒 <b>@${sanitizeHTML(reqUser)}</b> meminta mengikuti akun privatmu.</div>
+        <div style="display:flex; gap:4px;">
+          <button onclick="respondFollowRequest('${reqUser}', true)" style="background:#10b981; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:bold; cursor:pointer;">ACC</button>
+          <button onclick="respondFollowRequest('${reqUser}', false)" style="background:#ef4444; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:bold; cursor:pointer;">Tolak</button>
+        </div>
+      </div>`;
+  });
+
+  const notifs = inboxNotifications[currentUser] || [];
+  if (reqList.length === 0 && notifs.length === 0) {
+    container.innerHTML = '<div style="font-size:12px; color:rgba(255,255,255,0.4); text-align:center; margin-top:20px;">Belum ada notifikasi di kotak masuk.</div>';
+    return;
+  }
+
+  notifs.forEach(n => {
+    const timeStr = new Date(n.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    container.innerHTML += `
+      <div class="card-box" style="padding:10px; margin-bottom:0; font-size:12px;">
+        <div>${sanitizeHTML(n.text)}</div>
+        <div style="font-size:9px; color:rgba(255,255,255,0.5); margin-top:3px;">${timeStr}</div>
+      </div>`;
+  });
+}
+
+async function respondFollowRequest(reqUser, accepted) {
+  if (!currentUser) return;
+  followRequests[currentUser] = (followRequests[currentUser] || []).filter(u => u !== reqUser);
+  if (accepted) {
+    if (!userFollowers[currentUser]) userFollowers[currentUser] = [];
+    if (!userFollowers[currentUser].includes(reqUser)) {
+      userFollowers[currentUser].push(reqUser);
+    }
+    if (!inboxNotifications[reqUser]) inboxNotifications[reqUser] = [];
+    inboxNotifications[reqUser].unshift({
+      id: 'notif_' + Date.now(),
+      from: currentUser,
+      text: `✅ @${currentUser} menerima permintaan follow kamu!`,
+      time: Date.now()
+    });
+  }
+  renderInboxNotifications();
+  renderInboxBadge();
+  updateProfileView();
+  await pushGitHubState({ followRequests, userFollowers, inboxNotifications });
+}
+
+async function clearMyInbox() {
+  if (!currentUser) return;
+  inboxNotifications[currentUser] = [];
+  renderInboxNotifications();
+  renderInboxBadge();
+  await pushGitHubState({ inboxNotifications });
+}
+
+// --- LIVE FOTO GLOBAL ---
 let newPostImageBase64 = "";
 
 function openCreatePostModal() {
@@ -1480,36 +1839,37 @@ function renderGlobalPosts() {
   }
   globalPosts.forEach((post, pIdx) => {
     let meta = userProfilesMeta[post.user] || {};
-    let avatarHTML = buildAvatarHTML(post.user, post.avatar || meta.avatar || '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
+    let canView = canViewPrivateProfile(post.user);
+    let avatarHTML = buildAvatarHTML(post.user, canView ? (post.avatar || meta.avatar || '') : '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
     let isLiked = (post.likedBy || []).includes(currentUser);
-    let formattedCaption = post.caption.replace(/(#\\w+)/g, '<span style="color:#38bdf8; font-weight:bold;">$1</span>');
+    let formattedCaption = post.caption.replace(/(#\w+)/g, '<span style="color:#38bdf8; font-weight:bold;">$1</span>');
     let commentsHTML = '';
     (post.comments || []).forEach(c => {
-      commentsHTML += \`<div style="font-size:11px; margin-bottom:3px;"><b>@\${sanitizeHTML(c.user)}:</b> \${sanitizeHTML(c.text)}</div>\`;
+      commentsHTML += `<div style="font-size:11px; margin-bottom:3px;"><b>@${sanitizeHTML(c.user)}:</b> ${sanitizeHTML(c.text)}</div>`;
     });
-    container.innerHTML += \`
+    container.innerHTML += `
       <div class="global-post-card">
         <div class="global-post-header">
           <div style="display:flex; align-items:center; gap:8px;">
-            <div style="transform:scale(0.85); transform-origin:left center;" onclick="openUserProfile('\${post.user}', '')">\${avatarHTML}</div>
+            <div style="transform:scale(0.85); transform-origin:left center;" onclick="openUserProfile('${post.user}')">${avatarHTML}</div>
             <div>
-              <div style="font-weight:bold; color:#f8fafc; font-size:13px; cursor:pointer;" onclick="openUserProfile('\${post.user}', '')">\${sanitizeHTML(post.user)}</div>
-              <div style="font-size:9px; color:rgba(255,255,255,0.5);">\${new Date(post.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+              <div style="font-weight:bold; color:#f8fafc; font-size:13px; cursor:pointer;" onclick="openUserProfile('${post.user}')">${sanitizeHTML(post.user)} ${accountPrivacy[post.user] ? '🔒' : ''}</div>
+              <div style="font-size:9px; color:rgba(255,255,255,0.5);">${new Date(post.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
             </div>
           </div>
         </div>
-        <div class="global-post-img-wrap"><img src="\${post.image}"></div>
+        <div class="global-post-img-wrap"><img src="${post.image}"></div>
         <div class="global-post-actions">
-          <button class="action-btn" onclick="triggerGlobalPostLike(\${pIdx})">\${isLiked ? '❤️' : '🤍'} <span>\${formatCompactNumber(post.likes)}</span></button>
+          <button class="action-btn" onclick="triggerGlobalPostLike(${pIdx})">${isLiked ? '❤️' : '🤍'} <span>${formatCompactNumber(post.likes)}</span></button>
           <button class="action-btn" onclick="alert('Logo Play dipicu!')">▶️ Play</button>
         </div>
-        <div style="font-size:12px; color:#f8fafc; margin-bottom:6px; word-break:break-word;"><b>@\${sanitizeHTML(post.user)}</b> \${formattedCaption}</div>
-        <div style="background:rgba(0,0,0,0.3); border-radius:8px; padding:6px; margin-bottom:6px; max-height:80px; overflow-y:auto;">\${commentsHTML || '<span style="font-size:10px; color:rgba(255,255,255,0.4);">Belum ada komentar.</span>'}</div>
+        <div style="font-size:12px; color:#f8fafc; margin-bottom:6px; word-break:break-word;"><b>@${sanitizeHTML(post.user)}</b> ${formattedCaption}</div>
+        <div style="background:rgba(0,0,0,0.3); border-radius:8px; padding:6px; margin-bottom:6px; max-height:80px; overflow-y:auto;">${commentsHTML || '<span style="font-size:10px; color:rgba(255,255,255,0.4);">Belum ada komentar.</span>'}</div>
         <div style="display:flex; gap:5px;">
-          <input type="text" id="global-comment-input-\${pIdx}" placeholder="💬 Tulis komentar & hashtag..." style="flex:1; padding:6px; background:rgba(15,23,42,0.8); color:white; border:1px solid var(--glass-border); border-radius:6px; outline:none; font-size:11px;">
-          <button onclick="postGlobalComment(\${pIdx})" style="background:#0284c7; border:none; color:white; padding:6px 10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:11px;">Kirim</button>
+          <input type="text" id="global-comment-input-${pIdx}" placeholder="💬 Tulis komentar & hashtag..." style="flex:1; padding:6px; background:rgba(15,23,42,0.8); color:white; border:1px solid var(--glass-border); border-radius:6px; outline:none; font-size:11px;">
+          <button onclick="postGlobalComment(${pIdx})" style="background:#0284c7; border:none; color:white; padding:6px 10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:11px;">Kirim</button>
         </div>
-      </div>\`;
+      </div>`;
   });
 }
 
@@ -1517,14 +1877,22 @@ async function triggerGlobalPostLike(pIdx) {
   let post = globalPosts[pIdx];
   if(!post.likedBy) post.likedBy = [];
   let likedIdx = post.likedBy.indexOf(currentUser);
-  if(likedIdx > -1) { post.likedBy.splice(likedIdx, 1); post.likes--; }
-  else { post.likedBy.push(currentUser); post.likes++; }
+  if(likedIdx > -1) {
+    post.likedBy.splice(likedIdx, 1);
+    post.likes--;
+  } else {
+    post.likedBy.push(currentUser);
+    post.likes++;
+    await pushInboxNotification(post.user, {
+      text: `❤️ @${currentUser} menyukai postingan live foto kamu!`
+    });
+  }
   renderGlobalPosts();
   await pushGitHubState({ posts: globalPosts });
 }
 
 async function postGlobalComment(pIdx) {
-  let input = document.getElementById(\`global-comment-input-\${pIdx}\`);
+  let input = document.getElementById(`global-comment-input-${pIdx}`);
   let text = sanitizeHTML(input.value.trim());
   if(!text) return;
   let post = globalPosts[pIdx];
@@ -1535,30 +1903,41 @@ async function postGlobalComment(pIdx) {
   await pushGitHubState({ posts: globalPosts });
 }
 
-function openFollowingModal() {
-  let listEl = document.getElementById('following-users-list');
-  listEl.innerHTML = '';
-  let followingUsers = [];
-  for(let u in userFollowers) {
-    if((userFollowers[u] || []).includes(currentUser)) followingUsers.push(u);
-  }
-  if(followingUsers.length === 0) {
-    listEl.innerHTML = '<span style="font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">Anda belum mengikuti siapapun.</span>';
+// --- MODAL DAFTAR PENGIKUT & MENGIKUTI ---
+function openFollowListModal(targetUsername, mode) {
+  const modal = document.getElementById('follow-list-modal');
+  const titleEl = document.getElementById('follow-list-modal-title');
+  const bodyEl = document.getElementById('follow-list-modal-body');
+  if (!modal || !titleEl || !bodyEl) return;
+
+  bodyEl.innerHTML = '';
+  let usersList = [];
+  if (mode === 'followers') {
+    titleEl.textContent = `👥 Pengikut @${targetUsername}`;
+    usersList = userFollowers[targetUsername] || [];
   } else {
-    followingUsers.forEach(u => {
+    titleEl.textContent = `➡️ Mengikuti oleh @${targetUsername}`;
+    usersList = getFollowingUsers(targetUsername);
+  }
+
+  if (usersList.length === 0) {
+    bodyEl.innerHTML = '<span style="font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">Belum ada daftar.</span>';
+  } else {
+    usersList.forEach(u => {
       let meta = userProfilesMeta[u] || {};
-      let avSnippet = buildAvatarHTML(u, meta.avatar || '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
-      listEl.innerHTML += \`
+      let canView = canViewPrivateProfile(u);
+      let avSnippet = buildAvatarHTML(u, canView ? (meta.avatar || '') : '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
+      bodyEl.innerHTML += `
         <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(30,41,59,0.6); padding:6px 8px; border-radius:8px;">
           <div style="display:flex; align-items:center; gap:8px;">
-            <div style="transform:scale(0.7); transform-origin:left center;" onclick="openUserProfile('\${u}', '')">\${avSnippet}</div>
-            <span style="font-size:12px; font-weight:bold; color:#38bdf8; cursor:pointer;" onclick="openUserProfile('\${u}', '')">\${sanitizeHTML(u)}</span>
+            <div style="transform:scale(0.7); transform-origin:left center;" onclick="openUserProfile('${u}')">${avSnippet}</div>
+            <span style="font-size:12px; font-weight:bold; color:#38bdf8; cursor:pointer;" onclick="openUserProfile('${u}')">@${sanitizeHTML(u)} ${accountPrivacy[u] ? '🔒' : ''}</span>
           </div>
-          <button onclick="openUserProfile('\${u}', '')" style="background:#0284c7; border:none; color:white; padding:3px 8px; border-radius:6px; font-size:10px; cursor:pointer;">Profil</button>
-        </div>\`;
+          <button onclick="openUserProfile('${u}')" style="background:#0284c7; border:none; color:white; padding:3px 8px; border-radius:6px; font-size:10px; cursor:pointer;">Profil</button>
+        </div>`;
     });
   }
-  document.getElementById('following-modal').style.display = 'flex';
+  modal.style.display = 'flex';
 }
 
 function openBugReportModal() {
@@ -1615,85 +1994,86 @@ function renderShopCategory(category, btnEl) {
 
   if(category === 'vip') {
     let topupPacks = [
-      { name: "💰 Paket 100 Koin", price: "Rp 10.000 / $1", coins: 100 },
-      { name: "💰 Paket 550 Koin + Bonus", price: "Rp 50.000 / $4", coins: 550 },
-      { name: "💰 Paket 1.200 Koin VIP", price: "Rp 100.000 / $8", coins: 1200 },
-      { name: "👑 Premium Pass 2 Hari", price: "Rp 15.000", desc: "Akses Fitur VIP Uji Coba 2 Hari" },
-      { name: "👑 Premium Pass 1 Bulan", price: "Rp 35.000", desc: "Akses VIP 30 Hari Penuh" },
-      { name: "👑 Premium Pass 3 Bulan", price: "Rp 90.000", desc: "Akses VIP 90 Hari + Bonus" },
-      { name: "👑 Premium Permanen", price: "Rp 200.000", desc: "Status VIP Selamanya di Server" }
+      { name: "💰 Paket 100 Koin", price: "Rp 15.000 / $1.5", coins: 100 },
+      { name: "💰 Paket 550 Koin + Bonus", price: "Rp 70.000 / $6", coins: 550 },
+      { name: "💰 Paket 1.200 Koin VIP", price: "Rp 140.000 / $12", coins: 1200 },
+      { name: "👑 Premium Pass 2 Hari", price: "Rp 25.000", desc: "Akses Fitur VIP Uji Coba 2 Hari" },
+      { name: "👑 Premium Pass 1 Bulan", price: "Rp 55.000", desc: "Akses VIP 30 Hari Penuh" },
+      { name: "👑 Premium Pass 3 Bulan", price: "Rp 135.000", desc: "Akses VIP 90 Hari + Bonus" },
+      { name: "👑 Premium Permanen", price: "Rp 299.000", desc: "Status VIP Selamanya di Server" }
     ];
     topupPacks.forEach(pack => {
-      let descText = pack.coins ? \`Dapatkan \${pack.coins} Koin Instan • \${pack.price}\` : \`\${pack.desc} • \${pack.price}\`;
-      list.innerHTML += \`<div class="shop-item"><div><b>\${pack.name}</b><br><small style="color:rgba(255,255,255,0.6);">\${descText}</small></div><button class="buy-btn topup" onclick="buyVipTopUp('\${pack.name}', '\${pack.price}')">Beli via DM 📩</button></div>\`;
+      let descText = pack.coins ? `Dapatkan ${pack.coins} Koin Instan • ${pack.price}` : `${pack.desc} • ${pack.price}`;
+      list.innerHTML += `<div class="shop-item"><div><b>${pack.name}</b><br><small style="color:rgba(255,255,255,0.6);">${descText}</small></div><button class="buy-btn topup" onclick="buyVipTopUp('${pack.name}', '${pack.price}')">Beli via DM 📩</button></div>`;
     });
   } else if(category === 'shape') {
     BORDER_SHAPES.forEach(shape => {
       let isOwned = (shape.price === 0) || ownedItems.includes(shape.id);
       let isEquipped = (activeBorderShape === shape.id);
       let btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
-      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : \`Beli \${shape.price} 💰\`);
-      list.innerHTML += \`
+      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : `Beli ${shape.price} 💰`);
+      list.innerHTML += `
         <div class="shop-item">
           <div style="display:flex; align-items:center; gap:8px;">
             <div style="width:28px; height:28px; position:relative; display:flex; align-items:center; justify-content:center;">
               <div style="width:20px; height:20px; border-radius:50%; background:#0f172a; z-index:2;"></div>
-              <div class="border-shape-ring \${shape.class}" style="z-index:3;"></div>
+              <div class="border-shape-ring ${shape.class}" style="z-index:3;"></div>
             </div>
-            <div><b style="font-size:12px;">\${shape.name}</b><br><small style="color:rgba(255,255,255,0.6); font-size:10px;">Bentuk Garis • \${shape.price === 0 ? 'Gratis' : shape.price + ' 💰'}</small></div>
+            <div><b style="font-size:12px;">${shape.name}</b><br><small style="color:rgba(255,255,255,0.6); font-size:10px;">Bentuk Garis • ${shape.price === 0 ? 'Gratis' : shape.price + ' 💰'}</small></div>
           </div>
-          <button class="\${btnClass}" onclick="buyBorderShape('\${shape.id}', \${shape.price})">\${btnText}</button>
-        </div>\`;
+          <button class="${btnClass}" onclick="buyBorderShape('${shape.id}', ${shape.price})">${btnText}</button>
+        </div>`;
     });
   } else if(category === 'accessory') {
     BORDER_ACCESSORIES.forEach(acc => {
       let isOwned = (acc.price === 0) || ownedItems.includes(acc.id);
       let isEquipped = (activeAccessory === acc.id);
       let btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
-      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : \`Beli \${acc.price} 💰\`);
-      list.innerHTML += \`
+      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : `Beli ${acc.price} 💰`);
+      list.innerHTML += `
         <div class="shop-item">
           <div style="display:flex; align-items:center; gap:8px;">
-            <div style="font-size:16px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.4); border-radius:6px;">\${acc.emoji || '✨'}</div>
-            <div><b style="font-size:12px;">\${acc.name}</b><br><small style="color:rgba(255,255,255,0.6); font-size:10px;">Aksesoris Emoji • \${acc.price === 0 ? 'Gratis' : acc.price + ' 💰'}</small></div>
+            <div style="font-size:16px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.4); border-radius:6px;">${acc.emoji || '✨'}</div>
+            <div><b style="font-size:12px;">${acc.name}</b><br><small style="color:rgba(255,255,255,0.6); font-size:10px;">Aksesoris Emoji • ${acc.price === 0 ? 'Gratis' : acc.price + ' 💰'}</small></div>
           </div>
-          <button class="\${btnClass}" onclick="buyBorderAccessory('\${acc.id}', \${acc.price})">\${btnText}</button>
-        </div>\`;
+          <button class="${btnClass}" onclick="buyBorderAccessory('${acc.id}', ${acc.price})">${btnText}</button>
+        </div>`;
     });
   } else if(category === 'font') {
     FONT_STYLES.forEach((base, i) => {
-      let itemId = \`font_\${i}\`;
+      let itemId = `font_${i}`;
+      let price = 250 + (i * 35);
       let isOwned = ownedItems.includes(itemId);
       let isEquipped = (activeFontEffect === itemId);
       let btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
-      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : \`Beli 80 💰\`);
-      list.innerHTML += \`
+      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : `Beli ${price} 💰`);
+      list.innerHTML += `
         <div class="shop-item">
-          <div><b style="font-size:12px; \${base.style}">\${base.name}</b><br><small style="color:rgba(255,255,255,0.6); font-size:10px;">Gaya Huruf • 80 💰</small></div>
-          <button class="\${btnClass}" onclick="buyItem('\${itemId}', 80)">\${btnText}</button>
-        </div>\`;
+          <div><b style="font-size:12px; ${base.style}">${base.name}</b><br><small style="color:rgba(255,255,255,0.6); font-size:10px;">Gaya Huruf • ${price} 💰</small></div>
+          <button class="${btnClass}" onclick="buyItem('${itemId}', ${price})">${btnText}</button>
+        </div>`;
     });
   } else {
     if(category === 'frame' && currentUser === DEV_NAME) {
       let isEq = (activeFrame === 'admin_galaxy');
-      list.innerHTML += \`<div class="shop-item"><div><b>👑 Bingkai Galaksi Supreme RGB</b><br><small style="color:#fbbf24;">Eksklusif Developer</small></div><button class="buy-btn \${isEq ? 'equipped' : 'owned'}" onclick="setActiveItem('admin_galaxy')">\${isEq ? 'Dipakai ✓' : 'Pakai'}</button></div>\`;
+      list.innerHTML += `<div class="shop-item"><div><b>👑 Bingkai Galaksi Supreme RGB</b><br><small style="color:#fbbf24;">Eksklusif Developer</small></div><button class="buy-btn ${isEq ? 'equipped' : 'owned'}" onclick="setActiveItem('admin_galaxy')">${isEq ? 'Dipakai ✓' : 'Pakai'}</button></div>`;
     }
     for(let i = 0; i < 50; i++) {
-      let itemId = \`\${category}_\${i}\`;
+      let itemId = `${category}_${i}`;
       let data = getEffectStyleData(itemId);
       let isOwned = ownedItems.includes(itemId);
       let isEquipped = (activeFrame === itemId || activeBubble === itemId || activeNameEffect === itemId || activeTextEffect === itemId);
-      let previewStyle = \`background: linear-gradient(45deg, \${data.c1}, \${data.c2}); filter: hue-rotate(\${data.hue}deg);\`;
+      let previewStyle = `background: linear-gradient(45deg, ${data.c1}, ${data.c2}); filter: hue-rotate(${data.hue}deg);`;
       let btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
-      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : \`Beli \${formatCompactNumber(data.price)} 💰\`);
-      list.innerHTML += \`
+      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : `Beli ${formatCompactNumber(data.price)} 💰`);
+      list.innerHTML += `
         <div class="shop-item">
           <div style="display:flex; align-items:center; gap:8px;">
-            <div style="width:20px; height:20px; border-radius:50%; \${previewStyle} box-shadow:0 0 6px \${data.c1};"></div>
-            <div><b style="font-size:12px;">\${data.name}</b><br><small style="color:rgba(255,255,255,0.6); font-size:10px;">Efek RGB • \${formatCompactNumber(data.price)} 💰</small></div>
+            <div style="width:20px; height:20px; border-radius:50%; ${previewStyle} box-shadow:0 0 6px ${data.c1};"></div>
+            <div><b style="font-size:12px;">${data.name}</b><br><small style="color:rgba(255,255,255,0.6); font-size:10px;">Efek RGB • ${formatCompactNumber(data.price)} 💰</small></div>
           </div>
-          <button class="\${btnClass}" onclick="buyItem('\${itemId}', \${data.price})">\${btnText}</button>
-        </div>\`;
+          <button class="${btnClass}" onclick="buyItem('${itemId}', ${data.price})">${btnText}</button>
+        </div>`;
     }
   }
 }
@@ -1733,7 +2113,7 @@ async function buyBorderAccessory(accId, price) {
 }
 
 async function buyVipTopUp(planName, priceTag) {
-  let dmText = \`Developer @pito, saya @\${currentUser} ingin membeli \${planName} seharga \${priceTag}. Tolong diproses ya!\`;
+  let dmText = `Developer @pito, saya @${currentUser} ingin membeli ${planName} seharga ${priceTag}. Tolong diproses ya!`;
   dmMessages.push({ id: 'dm_' + Date.now(), from: currentUser, to: DEV_NAME, text: dmText, time: Date.now() });
   await pushGitHubState({ dms: dmMessages });
   alert("📩 Permintaan pesanan terkirim ke DM Developer @pito!");
@@ -1807,13 +2187,13 @@ async function uploadGalleryPhoto(event) {
 
 function buildAvatarHTML(username, avatarImg, frameId, shapeId, accessoryId) {
   let initial = username ? username.charAt(0).toUpperCase() : 'U';
-  let picContent = avatarImg ? \`<img src="\${avatarImg}">\` : \`<span>\${initial}</span>\`;
+  let picContent = avatarImg ? `<img src="${avatarImg}">` : `<span>${initial}</span>`;
   let shapeClass = "border-circle";
   if(shapeId) {
     let s = BORDER_SHAPES.find(x => x.id === shapeId);
     if(s) shapeClass = s.class;
   }
-  let ringClass = \`border-shape-ring \${shapeClass}\`;
+  let ringClass = `border-shape-ring ${shapeClass}`;
   let ringStyle = "";
   let accessoryEmoji = "";
   let isSupremeAcc = false;
@@ -1825,7 +2205,7 @@ function buildAvatarHTML(username, avatarImg, frameId, shapeId, accessoryId) {
     let d = getEffectStyleData(frameId);
     if(d) {
       ringClass += " dyn-ring-live";
-      ringStyle = \`border-color: \${d.c1}; box-shadow: 0 0 10px \${d.c1}, inset 0 0 4px \${d.c1}; filter: hue-rotate(\${d.hue}deg);\`;
+      ringStyle = `border-color: ${d.c1}; box-shadow: 0 0 10px ${d.c1}, inset 0 0 4px ${d.c1}; filter: hue-rotate(${d.hue}deg);`;
     }
   } else if(!ringClass.includes('dev-supreme-ring')) {
     ringStyle = "border-color: #38bdf8;";
@@ -1840,10 +2220,10 @@ function buildAvatarHTML(username, avatarImg, frameId, shapeId, accessoryId) {
     }
   }
   let accessoryHTML = accessoryEmoji
-    ? \`<div class="\${isSupremeAcc ? 'frame-accessory-supreme' : 'frame-accessory-badge'}">\${accessoryEmoji}</div>\`
+    ? `<div class="${isSupremeAcc ? 'frame-accessory-supreme' : 'frame-accessory-badge'}">${accessoryEmoji}</div>`
     : "";
 
-  return \`<div class="avatar-container"><div class="profile-pic-circle">\${picContent}</div><div class="\${ringClass}" style="\${ringStyle}"></div>\${accessoryHTML}</div>\`;
+  return `<div class="avatar-container"><div class="profile-pic-circle">${picContent}</div><div class="${ringClass}" style="${ringStyle}"></div>${accessoryHTML}</div>`;
 }
 
 function updateProfileView() {
@@ -1856,11 +2236,17 @@ function updateProfileView() {
   let pBio = document.getElementById('profile-bio-input');
   if(pBio) pBio.value = userBios[currentUser] || "";
 
-  let followers = userFollowers[currentUser] || [];
+  let privBtn = document.getElementById('privacy-toggle-btn');
+  if (privBtn) {
+    privBtn.textContent = accountPrivacy[currentUser] ? "🔒 Akun: Privat" : "🌐 Akun: Publik";
+  }
+
   let fCount = document.getElementById('my-followers-count');
-  if(fCount) fCount.textContent = formatCompactNumber(followers.length);
+  if(fCount) fCount.textContent = formatCompactNumber(getFollowerDisplayCount(currentUser));
   let fgCount = document.getElementById('my-following-count');
-  if(fgCount) fgCount.textContent = formatCompactNumber(countFollowing(currentUser));
+  if(fgCount) fgCount.textContent = formatCompactNumber(getFollowingUsers(currentUser).length);
+
+  renderWeeklyCheckinUI();
 
   let today = new Date().toDateString();
   let canClaim = (isUserPass(currentUser) || isUserVip(currentUser)) && (userDailyClaim[currentUser] !== today);
@@ -1881,16 +2267,10 @@ function updateProfileView() {
       grid.innerHTML = '<span style="font-size:11px; color:rgba(255,255,255,0.4); grid-column:span 3; text-align:center;">Belum ada foto galeri.</span>';
     } else {
       myPhotos.forEach((photo, idx) => {
-        grid.innerHTML += \`<div class="gallery-item" onclick="openPhotoDetail('\${currentUser}', \${idx})"><img src="\${photo.img}"><div class="gallery-like-badge">❤️ \${formatCompactNumber(photo.likes)}</div></div>\`;
+        grid.innerHTML += `<div class="gallery-item" onclick="openPhotoDetail('${currentUser}', ${idx})"><img src="${photo.img}"><div class="gallery-like-badge">❤️ ${formatCompactNumber(photo.likes)}</div></div>`;
       });
     }
   }
-}
-
-function countFollowing(username) {
-  let count = 0;
-  for(let u in userFollowers) { if((userFollowers[u] || []).includes(username)) count++; }
-  return count;
 }
 
 let viewingUser = "";
@@ -1899,11 +2279,27 @@ function openUserProfile(username) {
   document.getElementById('modal-username').textContent = username;
   document.getElementById('modal-user-bio').textContent = userBios[username] || "Tidak ada bio.";
   let vipContainer = document.getElementById('modal-vip-badge-container');
-  vipContainer.innerHTML = (isUserVip(username) || isUserPass(username) || username === DEV_NAME) ? \`<span class="vip-badge">🌟 VIP PASS</span>\` : '';
+  vipContainer.innerHTML = (isUserVip(username) || isUserPass(username) || username === DEV_NAME) ? `<span class="vip-badge">🌟 VIP PASS</span>` : '';
+
+  let canView = canViewPrivateProfile(username);
+  let privTag = document.getElementById('modal-privacy-tag');
+  if (privTag) {
+    privTag.textContent = accountPrivacy[username]
+      ? (canView ? "🔒 Akun Privat (Sudah Diikuti)" : "🔒 Akun Privat — Ikuti & tunggu ACC untuk lihat foto")
+      : "🌐 Akun Publik";
+  }
+
   let meta = userProfilesMeta[username] || {};
-  document.getElementById('modal-user-avatar').innerHTML = buildAvatarHTML(username, meta.avatar || '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
-  let followers = userFollowers[username] || [];
-  document.getElementById('modal-followers-num').textContent = formatCompactNumber(followers.length);
+  document.getElementById('modal-user-avatar').innerHTML = buildAvatarHTML(
+    username,
+    canView ? (meta.avatar || '') : '',
+    meta.frame || '',
+    meta.shape || 'shape_circle',
+    meta.accessory || 'acc_none'
+  );
+
+  document.getElementById('modal-followers-num').textContent = formatCompactNumber(getFollowerDisplayCount(username));
+  document.getElementById('modal-following-num').textContent = formatCompactNumber(getFollowingUsers(username).length);
 
   let followBtn = document.getElementById('modal-follow-btn');
   let blockBtn = document.getElementById('modal-block-btn');
@@ -1913,17 +2309,32 @@ function openUserProfile(username) {
   } else {
     followBtn.style.display = 'block';
     blockBtn.style.display = 'block';
-    if(followers.includes(currentUser)) { followBtn.textContent = "✅ Mengikuti"; followBtn.style.background = "#475569"; }
-    else { followBtn.textContent = "➕ Ikuti"; followBtn.style.background = "#10b981"; }
+    let followers = userFollowers[username] || [];
+    let pendingReqs = followRequests[username] || [];
+    if(followers.includes(currentUser)) {
+      followBtn.textContent = "✅ Mengikuti";
+      followBtn.style.background = "#475569";
+    } else if (pendingReqs.includes(currentUser)) {
+      followBtn.textContent = "⏳ Menunggu ACC";
+      followBtn.style.background = "#d97706";
+    } else {
+      followBtn.textContent = accountPrivacy[username] ? "🔒 Minta Ikuti" : "➕ Ikuti";
+      followBtn.style.background = "#10b981";
+    }
     let blockedList = userBlocks[currentUser] || [];
     if(blockedList.includes(username)) { blockBtn.textContent = "🔓 Buka Blokir"; blockBtn.style.background = "#0284c7"; }
     else { blockBtn.textContent = "🚫 Blokir"; blockBtn.style.background = "#ef4444"; }
   }
+
   let grid = document.getElementById('modal-user-gallery');
   grid.innerHTML = '';
-  (userGalleries[username] || []).forEach((photo, idx) => {
-    grid.innerHTML += \`<div class="gallery-item" onclick="openPhotoDetail('\${username}', \${idx})"><img src="\${photo.img}"><div class="gallery-like-badge">❤️ \${formatCompactNumber(photo.likes)}</div></div>\`;
-  });
+  if (!canView) {
+    grid.innerHTML = '<span style="font-size:11px; color:#fbbf24; grid-column:span 3; text-align:center; padding:10px;">🔒 Galeri terkunci. Ikuti akun ini dulu!</span>';
+  } else {
+    (userGalleries[username] || []).forEach((photo, idx) => {
+      grid.innerHTML += `<div class="gallery-item" onclick="openPhotoDetail('${username}', ${idx})"><img src="${photo.img}"><div class="gallery-like-badge">❤️ ${formatCompactNumber(photo.likes)}</div></div>`;
+    });
+  }
   document.getElementById('user-profile-modal').style.display = 'flex';
 }
 
@@ -1938,10 +2349,37 @@ async function toggleBlockUser() {
 
 async function toggleFollowUser() {
   if(!userFollowers[viewingUser]) userFollowers[viewingUser] = [];
+  if(!followRequests[viewingUser]) followRequests[viewingUser] = [];
+
   let idx = userFollowers[viewingUser].indexOf(currentUser);
-  if(idx > -1) userFollowers[viewingUser].splice(idx, 1);
-  else userFollowers[viewingUser].push(currentUser);
-  await pushGitHubState({ followers: userFollowers });
+  if(idx > -1) {
+    userFollowers[viewingUser].splice(idx, 1);
+    await pushGitHubState({ userFollowers });
+    openUserProfile(viewingUser);
+    return;
+  }
+
+  let reqIdx = followRequests[viewingUser].indexOf(currentUser);
+  if (reqIdx > -1) {
+    followRequests[viewingUser].splice(reqIdx, 1);
+    await pushGitHubState({ followRequests });
+    openUserProfile(viewingUser);
+    return;
+  }
+
+  if (accountPrivacy[viewingUser] && currentUser !== DEV_NAME) {
+    followRequests[viewingUser].push(currentUser);
+    await pushGitHubState({ followRequests });
+    alert("🔒 Permintaan follow terkirim! Tunggu di-ACC di Kotak Masuk mereka.");
+    openUserProfile(viewingUser);
+    return;
+  }
+
+  userFollowers[viewingUser].push(currentUser);
+  await pushInboxNotification(viewingUser, {
+    text: `👤 @${currentUser} mulai mengikuti kamu!`
+  });
+  await pushGitHubState({ userFollowers });
   openUserProfile(viewingUser);
 }
 
@@ -1949,6 +2387,10 @@ function closeUserProfileModal() { document.getElementById('user-profile-modal')
 
 let activePhotoContext = { username: "", index: -1 };
 function openPhotoDetail(username, index) {
+  if (!canViewPrivateProfile(username)) {
+    alert("🔒 Akun ini privat! Ikuti dan tunggu di-ACC dulu.");
+    return;
+  }
   activePhotoContext = { username, index };
   let photo = (userGalleries[username] || [])[index];
   if(!photo) return;
@@ -1966,8 +2408,16 @@ async function triggerDetailLike() {
   if(!photos || !photos[index]) return;
   if(!photos[index].likedBy) photos[index].likedBy = [];
   let likedIdx = photos[index].likedBy.indexOf(currentUser);
-  if(likedIdx > -1) { photos[index].likedBy.splice(likedIdx, 1); photos[index].likes--; }
-  else { photos[index].likedBy.push(currentUser); photos[index].likes++; }
+  if(likedIdx > -1) {
+    photos[index].likedBy.splice(likedIdx, 1);
+    photos[index].likes--;
+  } else {
+    photos[index].likedBy.push(currentUser);
+    photos[index].likes++;
+    await pushInboxNotification(username, {
+      text: `❤️ @${currentUser} menyukai foto galeri kamu!`
+    });
+  }
   document.getElementById('detail-like-count').textContent = formatCompactNumber(photos[index].likes);
   updateProfileView();
   await pushGitHubState({ galleries: userGalleries });
@@ -1985,7 +2435,7 @@ function renderPhotoComments() {
   commentContainer.innerHTML = '';
   let comments = photo.comments || [];
   if(comments.length === 0) { commentContainer.innerHTML = '<span style="color:rgba(255,255,255,0.4); text-align:center;">Belum ada komentar.</span>'; return; }
-  comments.forEach(c => { commentContainer.innerHTML += \`<div><b>\${sanitizeHTML(c.user)}:</b> \${sanitizeHTML(c.text)}</div>\`; });
+  comments.forEach(c => { commentContainer.innerHTML += `<div><b>${sanitizeHTML(c.user)}:</b> ${sanitizeHTML(c.text)}</div>`; });
 }
 
 async function postPhotoComment() {
@@ -2081,7 +2531,7 @@ function renderMessageElement(msg, container) {
       div.style.setProperty('--bub-bg', bd.bg);
       div.style.setProperty('--bub-border', bd.c1);
       div.style.setProperty('--bub-glow', bd.c1);
-      div.style.filter = \`hue-rotate(\${bd.hue}deg)\`;
+      div.style.filter = `hue-rotate(${bd.hue}deg)`;
     }
   }
 
@@ -2091,7 +2541,8 @@ function renderMessageElement(msg, container) {
   let avatarWrapper = document.createElement('div');
   let fId = msg.frame || (isDevUser ? 'admin_galaxy' : '');
   let accId = msg.accessory || 'acc_none';
-  avatarWrapper.innerHTML = buildAvatarHTML(msg.user, msg.avatar, fId, msg.shape || 'shape_circle', accId);
+  let canView = canViewPrivateProfile(msg.user);
+  avatarWrapper.innerHTML = buildAvatarHTML(msg.user, canView ? msg.avatar : '', fId, msg.shape || 'shape_circle', accId);
   avatarWrapper.onclick = (e) => { e.stopPropagation(); openUserProfile(msg.user); };
 
   let nameSpan = document.createElement('span');
@@ -2107,7 +2558,7 @@ function renderMessageElement(msg, container) {
     let nd = getEffectStyleData(msg.nameEffect);
     if(nd) {
       nameSpan.className = 'dyn-name-live';
-      nameSpan.style.setProperty('--name-grad', \`linear-gradient(45deg, \${nd.c1}, \${nd.c2}, #ffffff, \${nd.c1})\`);
+      nameSpan.style.setProperty('--name-grad', `linear-gradient(45deg, ${nd.c1}, ${nd.c2}, #ffffff, ${nd.c1})`);
     }
   } else {
     nameSpan.style.color = '#38bdf8';
@@ -2133,7 +2584,7 @@ function renderMessageElement(msg, container) {
   if(msg.replyTo) {
     let replyBox = document.createElement('div');
     replyBox.className = 'reply-quote-box';
-    replyBox.innerHTML = \`<b>@\${sanitizeHTML(msg.replyTo.user)}</b><br>\${sanitizeHTML(msg.replyTo.text)}\`;
+    replyBox.innerHTML = `<b>@${sanitizeHTML(msg.replyTo.user)}</b><br>${sanitizeHTML(msg.replyTo.text)}`;
     div.appendChild(replyBox);
   }
 
@@ -2148,7 +2599,7 @@ function renderMessageElement(msg, container) {
     let td = getEffectStyleData(msg.textEffect);
     if(td) {
       textDiv.classList.add('dyn-text-live');
-      textDiv.style.setProperty('--txt-grad', \`linear-gradient(45deg, \${td.c1}, \${td.c2}, #ffffff, \${td.c1})\`);
+      textDiv.style.setProperty('--txt-grad', `linear-gradient(45deg, ${td.c1}, ${td.c2}, #ffffff, ${td.c1})`);
     }
   }
 
@@ -2178,15 +2629,14 @@ function renderDMProfileList() {
   if(!container) return;
   container.innerHTML = '';
   let users = Object.keys(userDatabase).filter(u => u !== currentUser);
-  let onlineMap = JSON.parse(localStorage.getItem('chat_online_users') || "{}");
-  let now = Date.now();
+  let activeOnline = getActiveOnlineMap();
 
   if(users.length === 0) {
     container.innerHTML = '<p style="font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">Belum ada pengguna lain.</p>';
     return;
   }
   users.forEach(u => {
-    let isOnline = onlineMap[u] && (now - onlineMap[u] < 15000);
+    let isOnline = Boolean(activeOnline[u]);
     let lastChat = "Belum ada percakapan...";
     let userDMs = dmMessages.filter(m => (m.from === currentUser && m.to === u) || (m.from === u && m.to === currentUser));
     if(userDMs.length > 0) {
@@ -2194,18 +2644,19 @@ function renderDMProfileList() {
       lastChat = (latest.from === currentUser ? "Anda: " : "") + latest.text;
     }
     let meta = userProfilesMeta[u] || {};
-    let avatarSnippet = buildAvatarHTML(u, meta.avatar || '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
-    container.innerHTML += \`
-      <div class="dm-user-card" onclick="openDMChat('\${u}')">
+    let canView = canViewPrivateProfile(u);
+    let avatarSnippet = buildAvatarHTML(u, canView ? (meta.avatar || '') : '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
+    container.innerHTML += `
+      <div class="dm-user-card" onclick="openDMChat('${u}')">
         <div class="dm-user-info">
-          \${avatarSnippet}
+          ${avatarSnippet}
           <div>
-            <div style="font-weight:bold; color:#38bdf8; font-size:13px;">\${sanitizeHTML(u)}</div>
-            <div style="font-size:10px; color:rgba(255,255,255,0.6); max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${sanitizeHTML(lastChat)}</div>
+            <div style="font-weight:bold; color:#38bdf8; font-size:13px;">${sanitizeHTML(u)} ${accountPrivacy[u] ? '🔒' : ''}</div>
+            <div style="font-size:10px; color:rgba(255,255,255,0.6); max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sanitizeHTML(lastChat)}</div>
           </div>
         </div>
-        <div><span class="status-indicator-badge \${isOnline ? 'status-online' : 'status-offline'}">\${isOnline ? '🟢 Online' : '⚪ Offline'}</span></div>
-      </div>\`;
+        <div><span class="status-indicator-badge ${isOnline ? 'status-online' : 'status-offline'}">${isOnline ? '🟢 Online' : '⚪ Offline'}</span></div>
+      </div>`;
   });
 }
 
@@ -2302,6 +2753,40 @@ function renderDM(targetUser) {
   container.scrollTop = container.scrollHeight;
 }
 
+// --- SEARCH USERNAME UNTUK GIFT PREMIUM & GIFT KOIN ---
+let selectedGiftPremTarget = "";
+let selectedGiftCoinTarget = "";
+
+function handleGiftSearchInput(kind, query) {
+  const dropdownId = kind === 'prem' ? 'dev-gift-prem-dropdown' : 'dev-gift-coin-dropdown';
+  const dropdown = document.getElementById(dropdownId);
+  if (!dropdown) return;
+  dropdown.innerHTML = '';
+  const q = query.trim().toLowerCase();
+  if (!q) { dropdown.style.display = 'none'; return; }
+  const matched = Object.keys(userDatabase).filter(u => u.includes(q));
+  if (matched.length === 0) { dropdown.style.display = 'none'; return; }
+  matched.forEach(u => {
+    const item = document.createElement('div');
+    item.className = 'autocomplete-item';
+    item.innerHTML = `<span style="font-size:12px; font-weight:bold;">@${sanitizeHTML(u)}</span>`;
+    item.onclick = () => {
+      if (kind === 'prem') {
+        selectedGiftPremTarget = u;
+        document.getElementById('dev-gift-prem-search').value = u;
+        document.getElementById('dev-gift-prem-selected').textContent = u;
+      } else {
+        selectedGiftCoinTarget = u;
+        document.getElementById('dev-gift-coin-search').value = u;
+        document.getElementById('dev-gift-coin-selected').textContent = u;
+      }
+      dropdown.style.display = 'none';
+    };
+    dropdown.appendChild(item);
+  });
+  dropdown.style.display = 'block';
+}
+
 let selectedBotTarget = "";
 let selectedBotPhotoIndex = -1;
 
@@ -2318,13 +2803,13 @@ async function loadSecurityAuditLogs() {
       } else {
         logs.forEach(log => {
           let timeStr = new Date(log.time).toLocaleTimeString();
-          container.innerHTML += \`
+          container.innerHTML += `
             <div style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); padding:6px; border-radius:6px; font-size:11px; margin-bottom:4px;">
-              <div style="color:#fca5a5; font-weight:bold;">🚨 \${log.toolUsed} (\${timeStr})</div>
-              <div><b>IP:</b> <code>\${log.ip}</code></div>
-              <div><b>Perangkat/Alat:</b> \${sanitizeHTML(log.device)}</div>
-              <div><b>Detail:</b> \${sanitizeHTML(log.attackVector)}</div>
-            </div>\`;
+              <div style="color:#fca5a5; font-weight:bold;">🚨 ${log.toolUsed} (${timeStr})</div>
+              <div><b>IP:</b> <code>${log.ip}</code></div>
+              <div><b>Perangkat/Alat:</b> ${sanitizeHTML(log.device)}</div>
+              <div><b>Detail:</b> ${sanitizeHTML(log.attackVector)}</div>
+            </div>`;
         });
       }
     }
@@ -2336,25 +2821,19 @@ async function loadSecurityAuditLogs() {
 async function openDevModal() {
   if(currentUser !== DEV_NAME) { alert("Hanya Developer Pito!"); return; }
   await pullGitHubState();
-  let onlineMap = JSON.parse(localStorage.getItem('chat_online_users') || "{}");
+  let activeOnline = getActiveOnlineMap();
   let stalkingList = document.getElementById('stalking-users-list');
   stalkingList.innerHTML = '';
   let count = 0;
-  let selectTarget = document.getElementById('dev-coin-target');
-  selectTarget.innerHTML = '';
-  let giveUserTarget = document.getElementById('dev-give-user-target');
-  giveUserTarget.innerHTML = '';
 
   for(let u in userDatabase) {
-    selectTarget.innerHTML += \`<option value="\${u}">\${u}</option>\`;
-    giveUserTarget.innerHTML += \`<option value="\${u}">\${u}</option>\`;
-    let isOnline = onlineMap[u] && (Date.now() - onlineMap[u] < 15000);
+    let isOnline = Boolean(activeOnline[u]);
     if(isOnline) count++;
-    stalkingList.innerHTML += \`
+    stalkingList.innerHTML += `
       <div class="stalking-user-row">
-        <span>👤 <b>\${u}</b> \${isOnline ? '🟢 (Online)' : '⚪ (Offline)'}</span>
-        <button onclick="openUserProfile('\${u}')" style="background:#0284c7; border:none; color:white; padding:3px 6px; border-radius:4px; cursor:pointer; font-size:10px;">Stalk</button>
-      </div>\`;
+        <span>👤 <b>${u}</b> ${isOnline ? '🟢 (Online)' : '⚪ (Offline)'}</span>
+        <button onclick="openUserProfile('${u}')" style="background:#0284c7; border:none; color:white; padding:3px 6px; border-radius:4px; cursor:pointer; font-size:10px;">Stalk</button>
+      </div>`;
   }
   document.getElementById('stalking-online-count').textContent = count;
   renderDevBugReports();
@@ -2381,12 +2860,12 @@ function renderDevBugReports() {
   }
   bugReports.forEach((bug, idx) => {
     let dateStr = new Date(bug.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    listEl.innerHTML += \`
+    listEl.innerHTML += `
       <div style="background:rgba(30,41,59,0.7); padding:6px 8px; border-radius:6px; font-size:11px; margin-bottom:4px;">
-        <div style="display:flex; justify-content:space-between;"><b style="color:#f87171;">@\${sanitizeHTML(bug.user)}</b><span style="font-size:9px;">\${dateStr}</span></div>
-        <div style="margin:4px 0;">\${sanitizeHTML(bug.text)}</div>
-        <button onclick="resolveBugReport(\${idx})" style="background:#10b981; border:none; color:white; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:bold; cursor:pointer;">Selesai / Hapus</button>
-      </div>\`;
+        <div style="display:flex; justify-content:space-between;"><b style="color:#f87171;">@${sanitizeHTML(bug.user)}</b><span style="font-size:9px;">${dateStr}</span></div>
+        <div style="margin:4px 0;">${sanitizeHTML(bug.text)}</div>
+        <button onclick="resolveBugReport(${idx})" style="background:#10b981; border:none; color:white; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:bold; cursor:pointer;">Selesai / Hapus</button>
+      </div>`;
   });
 }
 
@@ -2402,12 +2881,12 @@ function renderDevLostReports() {
   }
   lostReports.forEach((rep, idx) => {
     let dateStr = new Date(rep.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    listEl.innerHTML += \`
+    listEl.innerHTML += `
       <div style="background:rgba(30,41,59,0.7); padding:6px 8px; border-radius:6px; font-size:11px; margin-bottom:4px;">
-        <div style="display:flex; justify-content:space-between;"><b style="color:#fbbf24;">Akun: @\${sanitizeHTML(rep.username)}</b><span style="font-size:9px;">\${dateStr}</span></div>
-        <div style="margin:4px 0;">\${sanitizeHTML(rep.details)}</div>
-        <button onclick="resolveLostReport(\${idx})" style="background:#10b981; border:none; color:white; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:bold; cursor:pointer;">Selesai / Hapus</button>
-      </div>\`;
+        <div style="display:flex; justify-content:space-between;"><b style="color:#fbbf24;">Akun: @${sanitizeHTML(rep.username)}</b><span style="font-size:9px;">${dateStr}</span></div>
+        <div style="margin:4px 0;">${sanitizeHTML(rep.details)}</div>
+        <button onclick="resolveLostReport(${idx})" style="background:#10b981; border:none; color:white; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:bold; cursor:pointer;">Selesai / Hapus</button>
+      </div>`;
   });
 }
 
@@ -2430,7 +2909,7 @@ function filterDevSearchAccounts(query) {
   let q = query.trim().toLowerCase();
   for(let u in userDatabase) {
     if(!q || u.includes(q)) {
-      listEl.innerHTML += \`<div style="background:rgba(30,41,59,0.6); padding:5px 8px; border-radius:6px; font-size:11px;">👤 <b>\${u}</b> | Pass: <code style="color:#38bdf8;">\${userDatabase[u]}</code></div>\`;
+      listEl.innerHTML += `<div style="background:rgba(30,41,59,0.6); padding:5px 8px; border-radius:6px; font-size:11px;">👤 <b>${u}</b> | Pass: <code style="color:#38bdf8;">${userDatabase[u]}</code></div>`;
     }
   }
 }
@@ -2441,7 +2920,11 @@ function closeDevModal() {
 
 async function devExecuteGivePremium() {
   if(currentUser !== DEV_NAME) return;
-  let targetUser = document.getElementById('dev-give-user-target').value;
+  let targetUser = (selectedGiftPremTarget || document.getElementById('dev-gift-prem-search').value || "").trim().toLowerCase();
+  if (!targetUser || !userDatabase[targetUser]) {
+    alert("Pilih username target yang valid lewat search!");
+    return;
+  }
   let tier = document.getElementById('dev-give-tier').value;
   let now = Date.now();
   let expireTime = now;
@@ -2453,7 +2936,7 @@ async function devExecuteGivePremium() {
 
   userVipStatus[targetUser] = { expireTime };
   await pushGitHubState({ vipStatus: userVipStatus });
-  alert(\`👑 Berhasil memberikan \${tierName} kepada @\${targetUser}!\`);
+  alert(`👑 Berhasil memberikan ${tierName} kepada @${targetUser}!`);
   closeDevModal();
 }
 
@@ -2467,7 +2950,7 @@ function handleBotSearchInput(query) {
   matchedUsers.forEach(u => {
     let item = document.createElement('div');
     item.className = 'autocomplete-item';
-    item.innerHTML = \`<span style="font-size:12px; font-weight:bold;">\${u}</span>\`;
+    item.innerHTML = `<span style="font-size:12px; font-weight:bold;">${u}</span>`;
     item.onclick = () => selectBotTarget(u);
     dropdown.appendChild(item);
   });
@@ -2488,14 +2971,14 @@ function selectBotTarget(username) {
     return;
   }
   photos.forEach((photo, idx) => {
-    pickerContainer.innerHTML += \`<div class="bot-photo-picker-item" id="bot-picker-photo-\${idx}" onclick="selectBotPhoto(\${idx})"><img src="\${photo.img}"></div>\`;
+    pickerContainer.innerHTML += `<div class="bot-photo-picker-item" id="bot-picker-photo-${idx}" onclick="selectBotPhoto(${idx})"><img src="${photo.img}"></div>`;
   });
 }
 
 function selectBotPhoto(idx) {
   selectedBotPhotoIndex = idx;
   document.querySelectorAll('.bot-photo-picker-item').forEach(el => el.classList.remove('selected'));
-  let targetEl = document.getElementById(\`bot-picker-photo-\${idx}\`);
+  let targetEl = document.getElementById(`bot-picker-photo-${idx}`);
   if(targetEl) targetEl.classList.add('selected');
 }
 
@@ -2506,13 +2989,14 @@ function getCustomBotAmount() {
   return val;
 }
 
+// Bot follower khusus developer: hanya menambah angka visual botFollowerBoost (tidak ada isi akun bot di daftar)
 async function runBotAddFollowers() {
   if(currentUser !== DEV_NAME || !selectedBotTarget) return;
-  if(!userFollowers[selectedBotTarget]) userFollowers[selectedBotTarget] = [];
   let amount = getCustomBotAmount();
-  for(let i = 1; i <= amount; i++) userFollowers[selectedBotTarget].push("bot_" + Date.now() + "_" + i);
-  await pushGitHubState({ followers: userFollowers });
-  alert(\`🤖 Berhasil menambahkan \${formatCompactNumber(amount)} followers bot ke @\${selectedBotTarget}!\`);
+  botFollowerBoost[selectedBotTarget] = Number(botFollowerBoost[selectedBotTarget] || 0) + amount;
+  await pushGitHubState({ botFollowerBoost });
+  updateProfileView();
+  alert(`🤖 Berhasil menambahkan +${formatCompactNumber(amount)} followers visual ke @${selectedBotTarget}!`);
 }
 
 async function runBotAddLikesToTargetPhoto() {
@@ -2522,7 +3006,7 @@ async function runBotAddLikesToTargetPhoto() {
   let amount = getCustomBotAmount();
   photos[selectedBotPhotoIndex].likes = (photos[selectedBotPhotoIndex].likes || 0) + amount;
   await pushGitHubState({ galleries: userGalleries });
-  alert(\`🤖 Berhasil menambahkan \${formatCompactNumber(amount)} likes bot!\`);
+  alert(`🤖 Berhasil menambahkan ${formatCompactNumber(amount)} likes bot!`);
 }
 
 async function sendGlobalAnnouncement() {
@@ -2545,11 +3029,11 @@ function filterDevBanUsers(query) {
     if(u === DEV_NAME) continue;
     if(u.includes(query.toLowerCase())) {
       let isBanned = bannedUsers.includes(u);
-      list.innerHTML += \`
+      list.innerHTML += `
         <div class="user-item">
-          <span>\${sanitizeHTML(u)} \${isBanned ? '(BANNED)' : ''}</span>
-          <button class="ban-btn" onclick="toggleBanUser('\${u}')">\${isBanned ? 'Unban' : 'Ban'}</button>
-        </div>\`;
+          <span>${sanitizeHTML(u)} ${isBanned ? '(BANNED)' : ''}</span>
+          <button class="ban-btn" onclick="toggleBanUser('${u}')">${isBanned ? 'Unban' : 'Ban'}</button>
+        </div>`;
     }
   }
 }
@@ -2559,17 +3043,17 @@ async function toggleBanUser(username) {
   let reason = document.getElementById('dev-ban-reason-input').value.trim() || "Melanggar aturan komunitas.";
   if(bannedUsers.includes(username)) {
     bannedUsers = bannedUsers.filter(u => u !== username);
-    alert(\`User \${username} di-unban.\`);
+    alert(`User ${username} di-unban.`);
   } else {
     bannedUsers.push(username);
     playSoundEffect('ban');
     messages.push({
       id: 'msg_' + Date.now(),
-      user: "SYSTEM", avatar: "", text: \`⚠️ PENGUMUMAN BAN: Akun @\${username} dibanned karena: "\${reason}".\`,
+      user: "SYSTEM", avatar: "", text: `⚠️ PENGUMUMAN BAN: Akun @${username} dibanned karena: "${reason}".`,
       frame: "", bubble: "", nameEffect: "", textEffect: "", fontEffect: "", shape: "shape_circle", accessory: "acc_none"
     });
     renderMessages();
-    alert(\`User \${username} berhasil dibanned!\`);
+    alert(`User ${username} berhasil dibanned!`);
   }
   await pushGitHubState({ banned: bannedUsers, messages });
   filterDevBanUsers(document.getElementById('search-ban-input').value);
@@ -2582,7 +3066,7 @@ function uploadDevBackground(event) {
     const reader = new FileReader();
     reader.onload = function(ev) {
       customBgImage = ev.target.result;
-      document.body.style.setProperty('background-image', \`url(\${customBgImage})\`);
+      document.body.style.setProperty('background-image', `url(${customBgImage})`);
       localStorage.setItem('chat_bg_image', customBgImage);
       alert("Wallpaper diperbarui!");
     };
@@ -2605,7 +3089,7 @@ function uploadDevAudio(event) {
     const fileURL = URL.createObjectURL(file);
     let audio = document.getElementById('global-bg-audio');
     audio.src = fileURL; audio.play().catch(() => {});
-    document.getElementById('now-playing-label').textContent = \`Memutar lagu: \${file.name}\`;
+    document.getElementById('now-playing-label').textContent = `Memutar lagu: ${file.name}`;
   }
 }
 
@@ -2620,7 +3104,11 @@ function toggleMuteGlobalAudio() {
 
 async function devGiveCoins() {
   if(currentUser !== DEV_NAME) return;
-  let targetUser = document.getElementById('dev-coin-target').value;
+  let targetUser = (selectedGiftCoinTarget || document.getElementById('dev-gift-coin-search').value || "").trim().toLowerCase();
+  if (!targetUser || !userDatabase[targetUser]) {
+    alert("Pilih username target koin yang valid lewat search!");
+    return;
+  }
   let amount = parseInt(document.getElementById('dev-coin-amount').value);
   if(isNaN(amount) || amount <= 0) { alert("Jumlah koin tidak valid!"); return; }
   if(targetUser === currentUser) {
@@ -2628,7 +3116,7 @@ async function devGiveCoins() {
     updateCoinsDisplay();
   }
   await pushGitHubState({ coins: { [targetUser]: amount } });
-  alert(\`Berhasil mengirim \${formatCompactNumber(amount)} koin ke \${targetUser}!\`);
+  alert(`Berhasil mengirim ${formatCompactNumber(amount)} koin ke ${targetUser}!`);
 }
 </script>
 </body>
