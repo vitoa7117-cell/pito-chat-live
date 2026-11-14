@@ -285,6 +285,14 @@ export default {
           ...DEFAULT_STATE,
           ...currentState,
           ...(incoming && typeof incoming === "object" ? incoming : {}),
+          coins: {
+            ...(currentState.coins || {}),
+            ...((incoming && incoming.coins) || {})
+          },
+          ownedItems: {
+            ...(currentState.ownedItems || {}),
+            ...((incoming && incoming.ownedItems) || {})
+          },
           onlineUsers: cleanOnlineMap((incoming && incoming.onlineUsers) || currentState.onlineUsers)
         };
         await ghPutFile(STATE_PATH, merged, sha, "Sync Chatty real-time state");
@@ -326,7 +334,7 @@ body {
 #splash-screen {
   position: fixed; inset: 0; background: #050509; z-index: 9999;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  transition: opacity 0.6s ease;
+  transition: opacity 0.4s ease;
 }
 .loading-spinner {
   width: 55px; height: 55px; border: 4px solid rgba(56, 189, 248, 0.2);
@@ -953,9 +961,21 @@ header h1 { font-size: 15px; margin: 0; color: #f8fafc; font-weight: 600; displa
 const DEV_NAME = "pito";
 const DEV_PASS = "pito jago banget";
 
+function hideSplashScreen() {
+  var splash = document.getElementById('splash-screen');
+  if (splash && splash.style.display !== 'none') {
+    splash.style.opacity = '0';
+    setTimeout(function() {
+      if (splash) splash.style.display = 'none';
+    }, 350);
+  }
+}
+
+setTimeout(hideSplashScreen, 2500);
+
 function sanitizeHTML(str) {
   if (!str) return "";
-  let temp = document.createElement('div');
+  var temp = document.createElement('div');
   temp.textContent = str;
   return temp.innerHTML;
 }
@@ -1018,12 +1038,12 @@ const FONT_STYLES = [
 ];
 
 function getEffectStyleData(itemId) {
-  if(!itemId) return null;
-  let parts = itemId.split('_');
-  let idx = parseInt(parts[1]);
-  if(isNaN(idx)) return null;
-  let base = THEME_PALETTES[idx % THEME_PALETTES.length];
-  let hueOffset = Math.floor(idx / THEME_PALETTES.length) * 65;
+  if (!itemId) return null;
+  var parts = itemId.split('_');
+  var idx = parseInt(parts[1], 10);
+  if (isNaN(idx)) return null;
+  var base = THEME_PALETTES[idx % THEME_PALETTES.length];
+  var hueOffset = Math.floor(idx / THEME_PALETTES.length) * 65;
   return {
     name: base.name + " #" + (idx + 1),
     price: 300 + (idx * 45),
@@ -1035,29 +1055,32 @@ function getEffectStyleData(itemId) {
 }
 
 function getFontStyleData(itemId) {
-  if(!itemId) return null;
-  let idx = parseInt(itemId.split('_')[1]);
-  if(isNaN(idx)) return null;
-  let base = FONT_STYLES[idx % FONT_STYLES.length];
+  if (!itemId) return null;
+  var idx = parseInt(itemId.split('_')[1], 10);
+  if (isNaN(idx)) return null;
+  var base = FONT_STYLES[idx % FONT_STYLES.length];
   return { name: base.name + " #" + (idx + 1), price: 250 + (idx * 35), style: base.style };
 }
 
 function playWindowsStartupSound() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const notes = [523.25, 659.25, 783.99, 1046.50];
-    notes.forEach((freq, i) => {
-      let osc = ctx.createOscillator();
-      let gain = ctx.createGain();
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    var ctx = new AudioCtx();
+    var notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach(function(freq, i) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, ctx.currentTime + (i * 0.15));
       gain.gain.setValueAtTime(0.15, ctx.currentTime + (i * 0.15));
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (i * 0.15) + 0.8);
-      osc.connect(gain); gain.connect(ctx.destination);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
       osc.start(ctx.currentTime + (i * 0.15));
       osc.stop(ctx.currentTime + (i * 0.15) + 0.8);
     });
-  } catch(e) {}
+  } catch (e) {}
 }
 
 let announcementAudioData = "";
@@ -1066,44 +1089,49 @@ let devOnlineAudioData = "";
 function playSoundEffect(type) {
   try {
     if (type === 'announcement' && announcementAudioData) {
-      const aud = new Audio(announcementAudioData);
-      aud.play().catch(() => {});
+      var aud1 = new Audio(announcementAudioData);
+      aud1.play().catch(function() {});
       return;
     }
     if (type === 'dev_online' && devOnlineAudioData) {
-      const aud = new Audio(devOnlineAudioData);
-      aud.play().catch(() => {});
+      var aud2 = new Audio(devOnlineAudioData);
+      aud2.play().catch(function() {});
       return;
     }
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    if(type === 'ban') {
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    var ctx = new AudioCtx();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    if (type === 'ban') {
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(150, ctx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.4);
       gain.gain.setValueAtTime(0.3, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-      osc.start(); osc.stop(ctx.currentTime + 0.4);
-    } else if(type === 'announcement' || type === 'dev_online') {
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    } else if (type === 'announcement' || type === 'dev_online') {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(523.25, ctx.currentTime);
       osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.15);
       osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.3);
       gain.gain.setValueAtTime(0.2, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
-      osc.start(); osc.stop(ctx.currentTime + 0.6);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
     }
-  } catch(e) {}
+  } catch (e) {}
 }
 
 async function uploadCustomAnnouncementAudio(event) {
-  if(currentUser !== DEV_NAME) return;
-  const file = event.target.files[0];
-  if(!file) return;
-  if(file.size > 2.5 * 1024 * 1024) { alert("Ukuran file audio maksimal 2.5MB."); return; }
-  const reader = new FileReader();
+  if (currentUser !== DEV_NAME) return;
+  var file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 2.5 * 1024 * 1024) { alert("Ukuran file audio maksimal 2.5MB."); return; }
+  var reader = new FileReader();
   reader.onload = async function(ev) {
     announcementAudioData = ev.target.result;
     await pushGitHubState({ announcementAudio: announcementAudioData });
@@ -1113,11 +1141,11 @@ async function uploadCustomAnnouncementAudio(event) {
 }
 
 async function uploadCustomDevOnlineAudio(event) {
-  if(currentUser !== DEV_NAME) return;
-  const file = event.target.files[0];
-  if(!file) return;
-  if(file.size > 2.5 * 1024 * 1024) { alert("Ukuran file audio maksimal 2.5MB."); return; }
-  const reader = new FileReader();
+  if (currentUser !== DEV_NAME) return;
+  var file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 2.5 * 1024 * 1024) { alert("Ukuran file audio maksimal 2.5MB."); return; }
+  var reader = new FileReader();
   reader.onload = async function(ev) {
     devOnlineAudioData = ev.target.result;
     await pushGitHubState({ devOnlineAudio: devOnlineAudioData });
@@ -1164,11 +1192,13 @@ let lastDevOnlineKey = "";
 let currentReplyData = null;
 
 function getActiveOnlineMap() {
-  const now = Date.now();
-  const active = {};
+  var now = Date.now();
+  var active = {};
   if (!onlineUsersMap || typeof onlineUsersMap !== "object") return active;
-  for (const [uname, entry] of Object.entries(onlineUsersMap)) {
-    const lastSeen = typeof entry === "number" ? entry : (entry && entry.time) || 0;
+  for (var pair of Object.entries(onlineUsersMap)) {
+    var uname = pair[0];
+    var entry = pair[1];
+    var lastSeen = typeof entry === "number" ? entry : (entry && entry.time) || 0;
     if (now - lastSeen < 20000) {
       active[uname] = entry;
     }
@@ -1177,21 +1207,21 @@ function getActiveOnlineMap() {
 }
 
 function renderOnlineCounterUI() {
-  const active = getActiveOnlineMap();
-  const count = Math.max(Object.keys(active).length, currentUser ? 1 : 0);
-  const countText = document.getElementById('online-count-text');
+  var active = getActiveOnlineMap();
+  var count = Math.max(Object.keys(active).length, currentUser ? 1 : 0);
+  var countText = document.getElementById('online-count-text');
   if (countText) countText.textContent = count + " orang online";
 }
 
 function getFollowerDisplayCount(username) {
-  const realCount = (userFollowers[username] || []).length;
-  const botCount = Number(botFollowerBoost[username] || 0);
+  var realCount = (userFollowers[username] || []).length;
+  var botCount = Number(botFollowerBoost[username] || 0);
   return realCount + botCount;
 }
 
 function getFollowingUsers(username) {
-  const res = [];
-  for (const u in userFollowers) {
+  var res = [];
+  for (var u in userFollowers) {
     if ((userFollowers[u] || []).includes(username)) {
       res.push(u);
     }
@@ -1208,24 +1238,23 @@ function canViewPrivateProfile(targetUser) {
 async function pushInboxNotification(targetUser, notifObj) {
   if (!targetUser || targetUser === currentUser) return;
   if (!inboxNotifications[targetUser]) inboxNotifications[targetUser] = [];
-  inboxNotifications[targetUser].unshift({
+  inboxNotifications[targetUser].unshift(Object.assign({
     id: 'notif_' + Date.now() + '_' + Math.random(),
     from: currentUser,
-    time: Date.now(),
-    ...notifObj
-  });
+    time: Date.now()
+  }, notifObj));
   if (inboxNotifications[targetUser].length > 50) {
     inboxNotifications[targetUser].length = 50;
   }
-  await pushGitHubState({ inboxNotifications });
+  await pushGitHubState({ inboxNotifications: inboxNotifications });
 }
 
 function renderInboxBadge() {
-  const badge = document.getElementById('inbox-nav-badge');
+  var badge = document.getElementById('inbox-nav-badge');
   if (!badge || !currentUser) return;
-  const list = inboxNotifications[currentUser] || [];
-  const pendingReq = ((followRequests || {})[currentUser] || []).length;
-  const total = list.length + pendingReq;
+  var list = inboxNotifications[currentUser] || [];
+  var pendingReq = ((followRequests || {})[currentUser] || []).length;
+  var total = list.length + pendingReq;
   if (total > 0) {
     badge.style.display = 'inline-block';
     badge.textContent = total > 99 ? '99+' : String(total);
@@ -1271,11 +1300,11 @@ function applyRemoteState(state) {
   if (typeof state.devOnlineAudio === "string") devOnlineAudioData = state.devOnlineAudio;
 
   if (currentUser) {
-    const coinsMap = state.coins || {};
+    var coinsMap = state.coins || {};
     if (typeof coinsMap[currentUser] === "number") userCoins = coinsMap[currentUser];
-    const itemsMap = state.ownedItems || {};
+    var itemsMap = state.ownedItems || {};
     if (Array.isArray(itemsMap[currentUser])) ownedItems = itemsMap[currentUser];
-    const meta = userProfilesMeta[currentUser];
+    var meta = userProfilesMeta[currentUser];
     if (meta) {
       if (meta.avatar) currentAvatar = meta.avatar;
       if (meta.frame) activeFrame = meta.frame;
@@ -1288,10 +1317,10 @@ function applyRemoteState(state) {
     }
   }
 
-  const activeOnline = getActiveOnlineMap();
+  var activeOnline = getActiveOnlineMap();
   if (currentUser && currentUser !== DEV_NAME && activeOnline[DEV_NAME]) {
-    const devEntry = activeOnline[DEV_NAME];
-    const devKey = DEV_NAME + "_" + ((devEntry && devEntry.time) || "on");
+    var devEntry = activeOnline[DEV_NAME];
+    var devKey = DEV_NAME + "_" + ((devEntry && devEntry.time) || "on");
     if (devKey !== lastDevOnlineKey) {
       lastDevOnlineKey = devKey;
       playSoundEffect('dev_online');
@@ -1300,7 +1329,7 @@ function applyRemoteState(state) {
   }
 
   if (state.announcement && state.announcement.time) {
-    const key = state.announcement.time + "_" + state.announcement.text;
+    var key = state.announcement.time + "_" + state.announcement.text;
     if (key !== lastAnnouncementKey) {
       lastAnnouncementKey = key;
       showAnnouncementBanner(state.announcement.text, state.announcement.duration || 10000);
@@ -1310,9 +1339,9 @@ function applyRemoteState(state) {
 
 async function pullGitHubState() {
   try {
-    const res = await fetch('/api/db/state', { cache: 'no-store' });
+    var res = await fetch('/api/db/state', { cache: 'no-store' });
     if (!res.ok) return;
-    const state = await res.json();
+    var state = await res.json();
     applyRemoteState(state);
 
     if (currentUser && bannedUsers.includes(currentUser)) {
@@ -1328,13 +1357,18 @@ async function pullGitHubState() {
     renderMessages();
     renderGlobalPosts();
     if (activeDMTarget) renderDM(activeDMTarget);
-    if (document.getElementById('tab-dm') && document.getElementById('tab-dm').style.display === 'flex') {
+    var dmTab = document.getElementById('tab-dm');
+    if (dmTab && dmTab.style.display === 'flex') {
       renderDMProfileList();
     }
-    if (document.getElementById('tab-inbox') && document.getElementById('tab-inbox').style.display === 'flex') {
+    var inboxTab = document.getElementById('tab-inbox');
+    if (inboxTab && inboxTab.style.display === 'flex') {
       renderInboxNotifications();
     }
-    if (document.getElementById('tab-profile').style.display === 'flex') updateProfileView();
+    var profileTab = document.getElementById('tab-profile');
+    if (profileTab && profileTab.style.display === 'flex') {
+      updateProfileView();
+    }
   } catch (e) {
     console.error("Gagal sinkronisasi state GitHub:", e);
   }
@@ -1342,10 +1376,12 @@ async function pullGitHubState() {
 
 async function pushGitHubState(partialPatch) {
   try {
-    const payload = partialPatch || {};
+    var payload = Object.assign({}, partialPatch || {});
     if (currentUser) {
-      payload.coins = { ...(payload.coins || {}), [currentUser]: userCoins };
-      payload.ownedItems = { ...(payload.ownedItems || {}), [currentUser]: ownedItems };
+      payload.coins = Object.assign({}, payload.coins || {});
+      payload.coins[currentUser] = userCoins;
+      payload.ownedItems = Object.assign({}, payload.ownedItems || {});
+      payload.ownedItems[currentUser] = ownedItems;
     }
 
     await fetch('/api/db/state', {
@@ -1370,7 +1406,7 @@ function changeDevBadgeStyle(themeVal) {
   activeDevTheme = themeVal;
   pushGitHubState({ devTheme: activeDevTheme });
   renderMessages();
-  if(activeDMTarget) renderDM(activeDMTarget);
+  if (activeDMTarget) renderDM(activeDMTarget);
   alert("✨ Tema & Efek RGB Developer berhasil diperbarui!");
 }
 
@@ -1380,22 +1416,22 @@ function changeDevAccessory(accVal) {
   localStorage.setItem('chat_active_accessory', activeAccessory);
   syncUserMeta();
   renderMessages();
-  if(activeDMTarget) renderDM(activeDMTarget);
+  if (activeDMTarget) renderDM(activeDMTarget);
   updateProfileView();
   alert("👑 Aksesoris Emoji Supreme Developer berhasil dipasang!");
 }
 
 function saveDevLoginMessage() {
-  if(currentUser !== DEV_NAME) return;
-  let txt = document.getElementById('dev-login-msg-input').value.trim();
-  if(!txt) { alert("Pesan tidak boleh kosong!"); return; }
+  if (currentUser !== DEV_NAME) return;
+  var txt = document.getElementById('dev-login-msg-input').value.trim();
+  if (!txt) { alert("Pesan tidak boleh kosong!"); return; }
   devLoginNotificationText = txt;
   pushGitHubState({ devLoginMsg: devLoginNotificationText });
   alert("✨ Pesan notifikasi developer login berhasil diperbarui!");
 }
 
 function getDevThemeCSS(themeKey) {
-  switch(themeKey) {
+  switch (themeKey) {
     case 'diamond_neon':
       return { nameGrad: "linear-gradient(45deg, #00f2fe, #4facfe, #ffffff, #00f2fe)", badgeBg: "linear-gradient(135deg, #0284c7, #0369a1)" };
     case 'fire_ruby':
@@ -1410,7 +1446,7 @@ function getDevThemeCSS(themeKey) {
 }
 
 function syncUserMeta() {
-  if(!currentUser) return;
+  if (!currentUser) return;
   userProfilesMeta[currentUser] = {
     avatar: currentAvatar,
     frame: activeFrame,
@@ -1431,46 +1467,50 @@ function syncUserMeta() {
 }
 
 function isUserVip(username) {
-  if(username === DEV_NAME) return true;
-  let vip = userVipStatus[username];
-  return vip && (!vip.expireTime || Date.now() <= vip.expireTime);
+  if (username === DEV_NAME) return true;
+  var vip = userVipStatus[username];
+  return Boolean(vip && (!vip.expireTime || Date.now() <= vip.expireTime));
 }
 
 function isUserPass(username) {
-  if(username === DEV_NAME) return true;
-  let pass = userPassStatus[username];
-  return pass && (!pass.expireTime || Date.now() <= pass.expireTime);
+  if (username === DEV_NAME) return true;
+  var pass = userPassStatus[username];
+  return Boolean(pass && (!pass.expireTime || Date.now() <= pass.expireTime));
 }
 
 let activeBannerTimer = null;
-function showAnnouncementBanner(text, duration = 10000) {
+function showAnnouncementBanner(text, duration) {
+  var dur = duration || 10000;
   playSoundEffect('announcement');
-  let banner = document.getElementById('announcement-banner');
+  var banner = document.getElementById('announcement-banner');
   document.getElementById('announcement-text').textContent = text;
   banner.classList.add('show');
   if (activeBannerTimer) clearTimeout(activeBannerTimer);
-  activeBannerTimer = setTimeout(() => { banner.classList.remove('show'); }, duration);
+  activeBannerTimer = setTimeout(function() {
+    banner.classList.remove('show');
+  }, dur);
 }
 
 async function updateOnlinePresence() {
   if (!currentUser) return;
   onlineUsersMap[currentUser] = { time: Date.now() };
   renderOnlineCounterUI();
-  if (document.getElementById('tab-dm') && document.getElementById('tab-dm').style.display === 'flex') {
+  var dmTab = document.getElementById('tab-dm');
+  if (dmTab && dmTab.style.display === 'flex') {
     renderDMProfileList();
   }
   try {
-    const res = await fetch('/api/online/ping', {
+    var res = await fetch('/api/online/ping', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: currentUser })
     });
     if (res.ok) {
-      const data = await res.json();
+      var data = await res.json();
       if (data && data.onlineUsers) {
         onlineUsersMap = data.onlineUsers;
         renderOnlineCounterUI();
-        if (document.getElementById('tab-dm') && document.getElementById('tab-dm').style.display === 'flex') {
+        if (dmTab && dmTab.style.display === 'flex') {
           renderDMProfileList();
         }
       }
@@ -1480,15 +1520,9 @@ async function updateOnlinePresence() {
 setInterval(updateOnlinePresence, 5000);
 setInterval(pullGitHubState, 4000);
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', function() {
   playWindowsStartupSound();
-  setTimeout(() => {
-    let splash = document.getElementById('splash-screen');
-    if(splash) {
-      splash.style.opacity = '0';
-      setTimeout(() => { splash.style.display = 'none'; }, 600);
-    }
-  }, 2000);
+  setTimeout(hideSplashScreen, 1200);
 });
 
 window.onload = async function() {
@@ -1505,32 +1539,35 @@ window.onload = async function() {
       location.reload();
       return;
     }
-    if(customBgImage) document.body.style.setProperty('background-image', 'url(' + customBgImage + ')');
+    if (customBgImage) {
+      document.body.style.setProperty('background-image', 'url(' + customBgImage + ')');
+    }
 
+    var loginScreen = document.getElementById('login-screen');
     if (currentUser && userDatabase[currentUser]) {
-      let loginScreen = document.getElementById('login-screen');
-      if(loginScreen) loginScreen.style.display = 'none';
+      if (loginScreen) loginScreen.style.display = 'none';
       setupUserSession();
     } else {
-      let loginScreen = document.getElementById('login-screen');
-      if(loginScreen) loginScreen.style.display = 'flex';
+      if (loginScreen) loginScreen.style.display = 'flex';
     }
-  } catch(err) {
+  } catch (err) {
     console.error("Error pada window.onload:", err);
+  } finally {
+    hideSplashScreen();
   }
 };
 
 function loadAvatar(event) {
-  const file = event.target.files[0];
-  if(file) {
-    if(file.size > 2 * 1024 * 1024) { alert("Ukuran gambar maksimal 2MB."); return; }
-    const reader = new FileReader();
+  var file = event.target.files[0];
+  if (file) {
+    if (file.size > 2 * 1024 * 1024) { alert("Ukuran gambar maksimal 2MB."); return; }
+    var reader = new FileReader();
     reader.onload = function(ev) {
       currentAvatar = ev.target.result;
-      let preview = document.getElementById('preview-avatar');
-      if(preview) { preview.src = currentAvatar; preview.style.display = 'block'; }
-      let label = document.getElementById('avatar-label');
-      if(label) label.style.display = 'none';
+      var preview = document.getElementById('preview-avatar');
+      if (preview) { preview.src = currentAvatar; preview.style.display = 'block'; }
+      var label = document.getElementById('avatar-label');
+      if (label) label.style.display = 'none';
     };
     reader.readAsDataURL(file);
   }
@@ -1538,41 +1575,41 @@ function loadAvatar(event) {
 
 function updateProfileAvatar(event) {
   loadAvatar(event);
-  setTimeout(() => {
+  setTimeout(function() {
     localStorage.setItem('chat_current_avatar', currentAvatar);
     syncUserMeta();
     updateProfileView();
     renderMessages();
-    if(activeDMTarget) renderDM(activeDMTarget);
+    if (activeDMTarget) renderDM(activeDMTarget);
   }, 200);
 }
 
 async function handleLoginRegister() {
   try {
-    let nameField = document.getElementById('login-username');
-    let passField = document.getElementById('login-password');
-    if(!nameField || !passField) return;
+    var nameField = document.getElementById('login-username');
+    var passField = document.getElementById('login-password');
+    if (!nameField || !passField) return;
 
-    let name = sanitizeHTML(nameField.value.trim().toLowerCase());
-    let pass = passField.value.trim();
+    var name = sanitizeHTML(nameField.value.trim().toLowerCase());
+    var pass = passField.value.trim();
 
-    if(!name || !pass) { alert("Masukkan username dan password!"); return; }
-    if(!/^[a-z0-9_]{3,15}$/.test(name)) { alert("Username hanya boleh huruf kecil, angka, dan underscore (3-15 karakter)."); return; }
+    if (!name || !pass) { alert("Masukkan username dan password!"); return; }
+    if (!/^[a-z0-9_]{3,15}$/.test(name)) { alert("Username hanya boleh huruf kecil, angka, dan underscore (3-15 karakter)."); return; }
 
     await pullGitHubState();
 
-    if(bannedUsers.includes(name)) { alert("Akun ini telah dibanned!"); return; }
-    if(name === DEV_NAME && pass !== DEV_PASS) { alert("Password Developer salah!"); return; }
+    if (bannedUsers.includes(name)) { alert("Akun ini telah dibanned!"); return; }
+    if (name === DEV_NAME && pass !== DEV_PASS) { alert("Password Developer salah!"); return; }
 
-    if(!userDatabase[name]) {
+    if (!userDatabase[name]) {
       userDatabase[name] = pass;
       checkinProgress[name] = { day: 0, lastClaimDate: "" };
       await pushGitHubState({
         users: userDatabase,
         coins: { [name]: 50 },
-        checkinProgress
+        checkinProgress: checkinProgress
       });
-    } else if(userDatabase[name] !== pass) {
+    } else if (userDatabase[name] !== pass) {
       alert("Password salah!");
       return;
     }
@@ -1581,25 +1618,26 @@ async function handleLoginRegister() {
     localStorage.setItem('chat_current_user', currentUser);
     localStorage.setItem('chat_current_avatar', currentAvatar);
 
-    let loginScreen = document.getElementById('login-screen');
-    if(loginScreen) loginScreen.style.display = 'none';
+    var loginScreen = document.getElementById('login-screen');
+    if (loginScreen) loginScreen.style.display = 'none';
     setupUserSession();
-  } catch(e) {
+  } catch (e) {
     console.error("Error saat login:", e);
   }
 }
 
 function logoutAccount() {
-  if(confirm("Keluar akun?")) {
+  if (confirm("Keluar akun?")) {
     localStorage.removeItem('chat_current_user');
     location.reload();
   }
 }
 
 function setupUserSession() {
-  if(currentUser === DEV_NAME) {
-    let devBtn = document.getElementById('dev-btn');
-    if(devBtn) devBtn.style.display = 'block';
+  hideSplashScreen();
+  if (currentUser === DEV_NAME) {
+    var devBtn = document.getElementById('dev-btn');
+    if (devBtn) devBtn.style.display = 'block';
     showAnnouncementBanner(devLoginNotificationText, 10000);
   }
   syncUserMeta();
@@ -1614,49 +1652,51 @@ function setupUserSession() {
 }
 
 function switchTab(tabName, element) {
-  document.querySelectorAll('.tab-content').forEach(el => {
+  document.querySelectorAll('.tab-content').forEach(function(el) {
     el.classList.remove('active');
     el.style.display = 'none';
   });
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  let targetTab = document.getElementById('tab-' + tabName);
-  if(targetTab) {
+  document.querySelectorAll('.nav-item').forEach(function(el) {
+    el.classList.remove('active');
+  });
+  var targetTab = document.getElementById('tab-' + tabName);
+  if (targetTab) {
     targetTab.classList.add('active');
     targetTab.style.display = 'flex';
   }
-  if(element) element.classList.add('active');
-  let inputArea = document.getElementById('chat-input-area');
-  if(tabName === 'chat') {
-    if(inputArea) inputArea.style.display = 'block';
+  if (element) element.classList.add('active');
+  var inputArea = document.getElementById('chat-input-area');
+  if (tabName === 'chat') {
+    if (inputArea) inputArea.style.display = 'block';
   } else {
-    if(inputArea) inputArea.style.display = 'none';
-    if(tabName === 'dm') renderDMProfileList();
-    if(tabName === 'inbox') renderInboxNotifications();
-    if(tabName === 'post') renderGlobalPosts();
-    if(tabName === 'profile') updateProfileView();
-    if(tabName === 'shop') renderShopCategory(currentShopCat, document.querySelector('.shop-cat-btn.active'));
+    if (inputArea) inputArea.style.display = 'none';
+    if (tabName === 'dm') renderDMProfileList();
+    if (tabName === 'inbox') renderInboxNotifications();
+    if (tabName === 'post') renderGlobalPosts();
+    if (tabName === 'profile') updateProfileView();
+    if (tabName === 'shop') renderShopCategory(currentShopCat, document.querySelector('.shop-cat-btn.active'));
   }
 }
 
 function renderWeeklyCheckinUI() {
-  const grid = document.getElementById('checkin-week-grid');
-  const badge = document.getElementById('checkin-streak-badge');
-  const btn = document.getElementById('claim-weekly-checkin-btn');
+  var grid = document.getElementById('checkin-week-grid');
+  var badge = document.getElementById('checkin-streak-badge');
+  var btn = document.getElementById('claim-weekly-checkin-btn');
   if (!grid || !currentUser) return;
 
-  const prog = checkinProgress[currentUser] || { day: 0, lastClaimDate: "" };
-  const today = new Date().toDateString();
-  const alreadyToday = prog.lastClaimDate === today;
-  const nextDayIndex = alreadyToday ? prog.day : Math.min(prog.day + 1, 7);
+  var prog = checkinProgress[currentUser] || { day: 0, lastClaimDate: "" };
+  var today = new Date().toDateString();
+  var alreadyToday = prog.lastClaimDate === today;
+  var nextDayIndex = alreadyToday ? prog.day : Math.min(prog.day + 1, 7);
 
   if (badge) badge.textContent = "Hari " + prog.day + "/7";
 
   grid.innerHTML = '';
-  WEEKLY_CHECKIN_REWARDS.forEach((reward, idx) => {
-    const dayNum = idx + 1;
-    const isClaimed = dayNum <= prog.day;
-    const isNext = !alreadyToday && dayNum === nextDayIndex;
-    let cls = 'checkin-day-card';
+  WEEKLY_CHECKIN_REWARDS.forEach(function(reward, idx) {
+    var dayNum = idx + 1;
+    var isClaimed = dayNum <= prog.day;
+    var isNext = !alreadyToday && dayNum === nextDayIndex;
+    var cls = 'checkin-day-card';
     if (isClaimed) cls += ' claimed';
     else if (isNext) cls += ' next';
     grid.innerHTML +=
@@ -1673,7 +1713,7 @@ function renderWeeklyCheckinUI() {
       btn.disabled = true;
       btn.style.opacity = '0.6';
     } else {
-      const rewardAmt = WEEKLY_CHECKIN_REWARDS[nextDayIndex - 1];
+      var rewardAmt = WEEKLY_CHECKIN_REWARDS[nextDayIndex - 1];
       btn.textContent = "🎁 Klaim Check-In Hari " + nextDayIndex + " (+" + rewardAmt + " Koin)";
       btn.disabled = false;
       btn.style.opacity = '1';
@@ -1683,14 +1723,14 @@ function renderWeeklyCheckinUI() {
 
 async function claimWeeklyCheckin() {
   if (!currentUser) return;
-  const prog = checkinProgress[currentUser] || { day: 0, lastClaimDate: "" };
-  const today = new Date().toDateString();
+  var prog = checkinProgress[currentUser] || { day: 0, lastClaimDate: "" };
+  var today = new Date().toDateString();
   if (prog.lastClaimDate === today) {
     alert("Kamu sudah check-in hari ini!");
     return;
   }
-  const nextDay = prog.day >= 7 ? 1 : prog.day + 1;
-  const reward = WEEKLY_CHECKIN_REWARDS[nextDay - 1];
+  var nextDay = prog.day >= 7 ? 1 : prog.day + 1;
+  var reward = WEEKLY_CHECKIN_REWARDS[nextDay - 1];
   userCoins += reward;
   checkinProgress[currentUser] = { day: nextDay, lastClaimDate: today };
 
@@ -1698,7 +1738,7 @@ async function claimWeeklyCheckin() {
   renderWeeklyCheckinUI();
   await pushGitHubState({
     coins: { [currentUser]: userCoins },
-    checkinProgress
+    checkinProgress: checkinProgress
   });
   alert("🎉 Check-in Hari " + nextDay + " berhasil! Kamu dapat +" + reward + " Koin!");
 }
@@ -1707,19 +1747,19 @@ async function toggleMyPrivacyMode() {
   if (!currentUser) return;
   accountPrivacy[currentUser] = !accountPrivacy[currentUser];
   updateProfileView();
-  await pushGitHubState({ accountPrivacy });
+  await pushGitHubState({ accountPrivacy: accountPrivacy });
   alert(accountPrivacy[currentUser]
     ? "🔒 Mode Akun PRIVAT aktif! User lain harus follow & nunggu di-ACC untuk lihat foto profil & galeri."
     : "🌐 Mode Akun PUBLIK aktif! Semua user bisa melihat foto profil & galeri.");
 }
 
 function renderInboxNotifications() {
-  const container = document.getElementById('inbox-notifications-list');
+  var container = document.getElementById('inbox-notifications-list');
   if (!container || !currentUser) return;
   container.innerHTML = '';
 
-  const reqList = (followRequests[currentUser] || []);
-  reqList.forEach(reqUser => {
+  var reqList = (followRequests[currentUser] || []);
+  reqList.forEach(function(reqUser) {
     container.innerHTML +=
       '<div class="card-box" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:0;">' +
         '<div style="font-size:12px;">🔒 <b>@' + sanitizeHTML(reqUser) + '</b> meminta mengikuti akun privatmu.</div>' +
@@ -1730,14 +1770,14 @@ function renderInboxNotifications() {
       '</div>';
   });
 
-  const notifs = inboxNotifications[currentUser] || [];
+  var notifs = inboxNotifications[currentUser] || [];
   if (reqList.length === 0 && notifs.length === 0) {
     container.innerHTML = '<div style="font-size:12px; color:rgba(255,255,255,0.4); text-align:center; margin-top:20px;">Belum ada notifikasi di kotak masuk.</div>';
     return;
   }
 
-  notifs.forEach(n => {
-    const timeStr = new Date(n.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  notifs.forEach(function(n) {
+    var timeStr = new Date(n.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     container.innerHTML +=
       '<div class="card-box" style="padding:10px; margin-bottom:0; font-size:12px;">' +
         '<div>' + sanitizeHTML(n.text) + '</div>' +
@@ -1748,7 +1788,7 @@ function renderInboxNotifications() {
 
 async function respondFollowRequest(reqUser, accepted) {
   if (!currentUser) return;
-  followRequests[currentUser] = (followRequests[currentUser] || []).filter(u => u !== reqUser);
+  followRequests[currentUser] = (followRequests[currentUser] || []).filter(function(u) { return u !== reqUser; });
   if (accepted) {
     if (!userFollowers[currentUser]) userFollowers[currentUser] = [];
     if (!userFollowers[currentUser].includes(reqUser)) {
@@ -1765,7 +1805,7 @@ async function respondFollowRequest(reqUser, accepted) {
   renderInboxNotifications();
   renderInboxBadge();
   updateProfileView();
-  await pushGitHubState({ followRequests, userFollowers, inboxNotifications });
+  await pushGitHubState({ followRequests: followRequests, userFollowers: userFollowers, inboxNotifications: inboxNotifications });
 }
 
 async function clearMyInbox() {
@@ -1773,7 +1813,7 @@ async function clearMyInbox() {
   inboxNotifications[currentUser] = [];
   renderInboxNotifications();
   renderInboxBadge();
-  await pushGitHubState({ inboxNotifications });
+  await pushGitHubState({ inboxNotifications: inboxNotifications });
 }
 
 let newPostImageBase64 = "";
@@ -1787,13 +1827,13 @@ function openCreatePostModal() {
 }
 
 function loadNewPostImage(event) {
-  const file = event.target.files[0];
-  if(file) {
-    if(file.size > 2 * 1024 * 1024) { alert("Ukuran gambar maksimal 2MB."); return; }
-    const reader = new FileReader();
+  var file = event.target.files[0];
+  if (file) {
+    if (file.size > 2 * 1024 * 1024) { alert("Ukuran gambar maksimal 2MB."); return; }
+    var reader = new FileReader();
     reader.onload = function(ev) {
       newPostImageBase64 = ev.target.result;
-      let img = document.getElementById('new-post-preview-img');
+      var img = document.getElementById('new-post-preview-img');
       img.src = newPostImageBase64;
       img.style.display = 'block';
       document.getElementById('new-post-preview-label').style.display = 'none';
@@ -1803,9 +1843,9 @@ function loadNewPostImage(event) {
 }
 
 async function saveAndPublishGlobalPost() {
-  if(!newPostImageBase64) { alert("Pilih gambar terlebih dahulu!"); return; }
-  let caption = sanitizeHTML(document.getElementById('new-post-caption-input').value.trim());
-  let newPost = {
+  if (!newPostImageBase64) { alert("Pilih gambar terlebih dahulu!"); return; }
+  var caption = sanitizeHTML(document.getElementById('new-post-caption-input').value.trim());
+  var newPost = {
     id: 'post_' + Date.now(),
     user: currentUser,
     avatar: currentAvatar,
@@ -1824,21 +1864,21 @@ async function saveAndPublishGlobalPost() {
 }
 
 function renderGlobalPosts() {
-  let container = document.getElementById('global-posts-container');
-  if(!container) return;
+  var container = document.getElementById('global-posts-container');
+  if (!container) return;
   container.innerHTML = '';
-  if(globalPosts.length === 0) {
+  if (globalPosts.length === 0) {
     container.innerHTML = '<div style="font-size:12px; color:rgba(255,255,255,0.4); text-align:center; margin-top:20px;">Belum ada postingan live foto.</div>';
     return;
   }
-  globalPosts.forEach((post, pIdx) => {
-    let meta = userProfilesMeta[post.user] || {};
-    let canView = canViewPrivateProfile(post.user);
-    let avatarHTML = buildAvatarHTML(post.user, canView ? (post.avatar || meta.avatar || '') : '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
-    let isLiked = (post.likedBy || []).includes(currentUser);
-    let formattedCaption = post.caption.replace(/(#\w+)/g, '<span style="color:#38bdf8; font-weight:bold;">$1</span>');
-    let commentsHTML = '';
-    (post.comments || []).forEach(c => {
+  globalPosts.forEach(function(post, pIdx) {
+    var meta = userProfilesMeta[post.user] || {};
+    var canView = canViewPrivateProfile(post.user);
+    var avatarHTML = buildAvatarHTML(post.user, canView ? (post.avatar || meta.avatar || '') : '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
+    var isLiked = (post.likedBy || []).includes(currentUser);
+    var formattedCaption = post.caption.replace(/(#\w+)/g, '<span style="color:#38bdf8; font-weight:bold;">$1</span>');
+    var commentsHTML = '';
+    (post.comments || []).forEach(function(c) {
       commentsHTML += '<div style="font-size:11px; margin-bottom:3px;"><b>@' + sanitizeHTML(c.user) + ':</b> ' + sanitizeHTML(c.text) + '</div>';
     });
     container.innerHTML +=
@@ -1848,7 +1888,7 @@ function renderGlobalPosts() {
             '<div style="transform:scale(0.85); transform-origin:left center;" onclick="openUserProfile(\'' + post.user + '\')">' + avatarHTML + '</div>' +
             '<div>' +
               '<div style="font-weight:bold; color:#f8fafc; font-size:13px; cursor:pointer;" onclick="openUserProfile(\'' + post.user + '\')">' + sanitizeHTML(post.user) + ' ' + (accountPrivacy[post.user] ? '🔒' : '') + '</div>' +
-              '<div style="font-size:9px; color:rgba(255,255,255,0.5);">' + new Date(post.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + '</div>' +
+              '<div style="font-size:9px; color:rgba(255,255,255,0.5);">' + new Date(post.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1868,10 +1908,10 @@ function renderGlobalPosts() {
 }
 
 async function triggerGlobalPostLike(pIdx) {
-  let post = globalPosts[pIdx];
-  if(!post.likedBy) post.likedBy = [];
-  let likedIdx = post.likedBy.indexOf(currentUser);
-  if(likedIdx > -1) {
+  var post = globalPosts[pIdx];
+  if (!post.likedBy) post.likedBy = [];
+  var likedIdx = post.likedBy.indexOf(currentUser);
+  if (likedIdx > -1) {
     post.likedBy.splice(likedIdx, 1);
     post.likes--;
   } else {
@@ -1886,11 +1926,11 @@ async function triggerGlobalPostLike(pIdx) {
 }
 
 async function postGlobalComment(pIdx) {
-  let input = document.getElementById('global-comment-input-' + pIdx);
-  let text = sanitizeHTML(input.value.trim());
-  if(!text) return;
-  let post = globalPosts[pIdx];
-  if(!post.comments) post.comments = [];
+  var input = document.getElementById('global-comment-input-' + pIdx);
+  var text = sanitizeHTML(input.value.trim());
+  if (!text) return;
+  var post = globalPosts[pIdx];
+  if (!post.comments) post.comments = [];
   post.comments.push({ user: currentUser, text: text });
   input.value = '';
   renderGlobalPosts();
@@ -1898,13 +1938,13 @@ async function postGlobalComment(pIdx) {
 }
 
 function openFollowListModal(targetUsername, mode) {
-  const modal = document.getElementById('follow-list-modal');
-  const titleEl = document.getElementById('follow-list-modal-title');
-  const bodyEl = document.getElementById('follow-list-modal-body');
+  var modal = document.getElementById('follow-list-modal');
+  var titleEl = document.getElementById('follow-list-modal-title');
+  var bodyEl = document.getElementById('follow-list-modal-body');
   if (!modal || !titleEl || !bodyEl) return;
 
   bodyEl.innerHTML = '';
-  let usersList = [];
+  var usersList = [];
   if (mode === 'followers') {
     titleEl.textContent = "👥 Pengikut @" + targetUsername;
     usersList = userFollowers[targetUsername] || [];
@@ -1916,10 +1956,10 @@ function openFollowListModal(targetUsername, mode) {
   if (usersList.length === 0) {
     bodyEl.innerHTML = '<span style="font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">Belum ada daftar.</span>';
   } else {
-    usersList.forEach(u => {
-      let meta = userProfilesMeta[u] || {};
-      let canView = canViewPrivateProfile(u);
-      let avSnippet = buildAvatarHTML(u, canView ? (meta.avatar || '') : '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
+    usersList.forEach(function(u) {
+      var meta = userProfilesMeta[u] || {};
+      var canView = canViewPrivateProfile(u);
+      var avSnippet = buildAvatarHTML(u, canView ? (meta.avatar || '') : '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
       bodyEl.innerHTML +=
         '<div style="display:flex; align-items:center; justify-content:space-between; background:rgba(30,41,59,0.6); padding:6px 8px; border-radius:8px;">' +
           '<div style="display:flex; align-items:center; gap:8px;">' +
@@ -1939,11 +1979,11 @@ function openBugReportModal() {
 }
 
 async function submitBugReport() {
-  let text = sanitizeHTML(document.getElementById('bug-report-text-input').value.trim());
-  if(!text) { alert("Tuliskan deskripsi bug terlebih dahulu!"); return; }
+  var text = sanitizeHTML(document.getElementById('bug-report-text-input').value.trim());
+  if (!text) { alert("Tuliskan deskripsi bug terlebih dahulu!"); return; }
   bugReports.push({ id: 'bug_' + Date.now(), user: currentUser, text: text, time: Date.now() });
   document.getElementById('bug-report-modal').style.display = 'none';
-  await pushGitHubState({ bugReports });
+  await pushGitHubState({ bugReports: bugReports });
   alert("✅ Laporan bug berhasil dikirim ke GitHub DB!");
 }
 
@@ -1954,21 +1994,21 @@ function openLostAccountModal() {
 }
 
 async function submitLostAccountReport() {
-  let uName = sanitizeHTML(document.getElementById('lost-username-input').value.trim());
-  let details = sanitizeHTML(document.getElementById('lost-details-input').value.trim());
-  if(!uName || !details) { alert("Harap isi perkiraan username dan detail akun!"); return; }
+  var uName = sanitizeHTML(document.getElementById('lost-username-input').value.trim());
+  var details = sanitizeHTML(document.getElementById('lost-details-input').value.trim());
+  if (!uName || !details) { alert("Harap isi perkiraan username dan detail akun!"); return; }
   lostReports.push({ id: 'lost_' + Date.now(), username: uName, details: details, time: Date.now() });
   document.getElementById('lost-account-modal').style.display = 'none';
-  await pushGitHubState({ lostReports });
+  await pushGitHubState({ lostReports: lostReports });
   alert("⚠️ Laporan kehilangan akun terkirim ke GitHub DB!");
 }
 
 async function clearGlobalChat() {
-  if(currentUser !== DEV_NAME) { alert("Hanya Developer!"); return; }
-  if(confirm("Yakin ingin menghapus seluruh riwayat chat global secara permanen?")) {
+  if (currentUser !== DEV_NAME) { alert("Hanya Developer!"); return; }
+  if (confirm("Yakin ingin menghapus seluruh riwayat chat global secara permanen?")) {
     messages = [];
     renderMessages();
-    await pushGitHubState({ messages });
+    await pushGitHubState({ messages: messages });
     alert("Semua riwayat chat global berhasil dibersihkan!");
   }
 }
@@ -1977,16 +2017,16 @@ let currentShopCat = 'vip';
 
 function renderShopCategory(category, btnEl) {
   currentShopCat = category;
-  if(btnEl) {
-    document.querySelectorAll('.shop-cat-btn').forEach(b => b.classList.remove('active'));
+  if (btnEl) {
+    document.querySelectorAll('.shop-cat-btn').forEach(function(b) { b.classList.remove('active'); });
     btnEl.classList.add('active');
   }
-  let list = document.getElementById('shop-items-list');
-  if(!list) return;
+  var list = document.getElementById('shop-items-list');
+  if (!list) return;
   list.innerHTML = '';
 
-  if(category === 'vip') {
-    let topupPacks = [
+  if (category === 'vip') {
+    var topupPacks = [
       { name: "💰 Paket 100 Koin", price: "Rp 15.000 / $1.5", coins: 100 },
       { name: "💰 Paket 550 Koin + Bonus", price: "Rp 70.000 / $6", coins: 550 },
       { name: "💰 Paket 1.200 Koin VIP", price: "Rp 140.000 / $12", coins: 1200 },
@@ -1995,16 +2035,16 @@ function renderShopCategory(category, btnEl) {
       { name: "👑 Premium Pass 3 Bulan", price: "Rp 135.000", desc: "Akses VIP 90 Hari + Bonus" },
       { name: "👑 Premium Permanen", price: "Rp 299.000", desc: "Status VIP Selamanya di Server" }
     ];
-    topupPacks.forEach(pack => {
-      let descText = pack.coins ? ("Dapatkan " + pack.coins + " Koin Instan • " + pack.price) : (pack.desc + " • " + pack.price);
+    topupPacks.forEach(function(pack) {
+      var descText = pack.coins ? ("Dapatkan " + pack.coins + " Koin Instan • " + pack.price) : (pack.desc + " • " + pack.price);
       list.innerHTML += '<div class="shop-item"><div><b>' + pack.name + '</b><br><small style="color:rgba(255,255,255,0.6);">' + descText + '</small></div><button class="buy-btn topup" onclick="buyVipTopUp(\'' + pack.name + '\', \'' + pack.price + '\')">Beli via DM 📩</button></div>';
     });
-  } else if(category === 'shape') {
-    BORDER_SHAPES.forEach(shape => {
-      let isOwned = (shape.price === 0) || ownedItems.includes(shape.id);
-      let isEquipped = (activeBorderShape === shape.id);
-      let btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
-      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : ("Beli " + shape.price + " 💰"));
+  } else if (category === 'shape') {
+    BORDER_SHAPES.forEach(function(shape) {
+      var isOwned = (shape.price === 0) || ownedItems.includes(shape.id);
+      var isEquipped = (activeBorderShape === shape.id);
+      var btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
+      var btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : ("Beli " + shape.price + " 💰"));
       list.innerHTML +=
         '<div class="shop-item">' +
           '<div style="display:flex; align-items:center; gap:8px;">' +
@@ -2017,12 +2057,12 @@ function renderShopCategory(category, btnEl) {
           '<button class="' + btnClass + '" onclick="buyBorderShape(\'' + shape.id + '\', ' + shape.price + ')">' + btnText + '</button>' +
         '</div>';
     });
-  } else if(category === 'accessory') {
-    BORDER_ACCESSORIES.forEach(acc => {
-      let isOwned = (acc.price === 0) || ownedItems.includes(acc.id);
-      let isEquipped = (activeAccessory === acc.id);
-      let btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
-      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : ("Beli " + acc.price + " 💰"));
+  } else if (category === 'accessory') {
+    BORDER_ACCESSORIES.forEach(function(acc) {
+      var isOwned = (acc.price === 0) || ownedItems.includes(acc.id);
+      var isEquipped = (activeAccessory === acc.id);
+      var btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
+      var btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : ("Beli " + acc.price + " 💰"));
       list.innerHTML +=
         '<div class="shop-item">' +
           '<div style="display:flex; align-items:center; gap:8px;">' +
@@ -2032,14 +2072,14 @@ function renderShopCategory(category, btnEl) {
           '<button class="' + btnClass + '" onclick="buyBorderAccessory(\'' + acc.id + '\', ' + acc.price + ')">' + btnText + '</button>' +
         '</div>';
     });
-  } else if(category === 'font') {
-    FONT_STYLES.forEach((base, i) => {
-      let itemId = "font_" + i;
-      let price = 250 + (i * 35);
-      let isOwned = ownedItems.includes(itemId);
-      let isEquipped = (activeFontEffect === itemId);
-      let btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
-      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : ("Beli " + price + " 💰"));
+  } else if (category === 'font') {
+    FONT_STYLES.forEach(function(base, i) {
+      var itemId = "font_" + i;
+      var price = 250 + (i * 35);
+      var isOwned = ownedItems.includes(itemId);
+      var isEquipped = (activeFontEffect === itemId);
+      var btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
+      var btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : ("Beli " + price + " 💰"));
       list.innerHTML +=
         '<div class="shop-item">' +
           '<div><b style="font-size:12px; ' + base.style + '">' + base.name + '</b><br><small style="color:rgba(255,255,255,0.6); font-size:10px;">Gaya Huruf • ' + price + ' 💰</small></div>' +
@@ -2047,18 +2087,18 @@ function renderShopCategory(category, btnEl) {
         '</div>';
     });
   } else {
-    if(category === 'frame' && currentUser === DEV_NAME) {
-      let isEq = (activeFrame === 'admin_galaxy');
+    if (category === 'frame' && currentUser === DEV_NAME) {
+      var isEq = (activeFrame === 'admin_galaxy');
       list.innerHTML += '<div class="shop-item"><div><b>👑 Bingkai Galaksi Supreme RGB</b><br><small style="color:#fbbf24;">Eksklusif Developer</small></div><button class="buy-btn ' + (isEq ? 'equipped' : 'owned') + '" onclick="setActiveItem(\'admin_galaxy\')">' + (isEq ? 'Dipakai ✓' : 'Pakai') + '</button></div>';
     }
-    for(let i = 0; i < 50; i++) {
-      let itemId = category + "_" + i;
-      let data = getEffectStyleData(itemId);
-      let isOwned = ownedItems.includes(itemId);
-      let isEquipped = (activeFrame === itemId || activeBubble === itemId || activeNameEffect === itemId || activeTextEffect === itemId);
-      let previewStyle = "background: linear-gradient(45deg, " + data.c1 + ", " + data.c2 + "); filter: hue-rotate(" + data.hue + "deg);";
-      let btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
-      let btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : ("Beli " + formatCompactNumber(data.price) + " 💰"));
+    for (var i = 0; i < 50; i++) {
+      var itemId = category + "_" + i;
+      var data = getEffectStyleData(itemId);
+      var isOwned = ownedItems.includes(itemId);
+      var isEquipped = (activeFrame === itemId || activeBubble === itemId || activeNameEffect === itemId || activeTextEffect === itemId);
+      var previewStyle = "background: linear-gradient(45deg, " + data.c1 + ", " + data.c2 + "); filter: hue-rotate(" + data.hue + "deg);";
+      var btnClass = isEquipped ? 'buy-btn equipped' : (isOwned ? 'buy-btn owned' : 'buy-btn');
+      var btnText = isEquipped ? 'Dipakai ✓' : (isOwned ? 'Pakai' : ("Beli " + formatCompactNumber(data.price) + " 💰"));
       list.innerHTML +=
         '<div class="shop-item">' +
           '<div style="display:flex; align-items:center; gap:8px;">' +
@@ -2072,10 +2112,10 @@ function renderShopCategory(category, btnEl) {
 }
 
 async function buyBorderShape(shapeId, price) {
-  let shapeObj = BORDER_SHAPES.find(s => s.id === shapeId);
-  if(!shapeObj) return;
-  if(shapeObj.price > 0 && !ownedItems.includes(shapeId)) {
-    if(userCoins < price) { alert("Koin tidak cukup!"); return; }
+  var shapeObj = BORDER_SHAPES.find(function(s) { return s.id === shapeId; });
+  if (!shapeObj) return;
+  if (shapeObj.price > 0 && !ownedItems.includes(shapeId)) {
+    if (userCoins < price) { alert("Koin tidak cukup!"); return; }
     userCoins -= price;
     ownedItems.push(shapeId);
     updateCoinsDisplay();
@@ -2089,10 +2129,10 @@ async function buyBorderShape(shapeId, price) {
 }
 
 async function buyBorderAccessory(accId, price) {
-  let accObj = BORDER_ACCESSORIES.find(a => a.id === accId);
-  if(!accObj) return;
-  if(accObj.price > 0 && !ownedItems.includes(accId)) {
-    if(userCoins < price) { alert("Koin tidak cukup!"); return; }
+  var accObj = BORDER_ACCESSORIES.find(function(a) { return a.id === accId; });
+  if (!accObj) return;
+  if (accObj.price > 0 && !ownedItems.includes(accId)) {
+    if (userCoins < price) { alert("Koin tidak cukup!"); return; }
     userCoins -= price;
     ownedItems.push(accId);
     updateCoinsDisplay();
@@ -2106,7 +2146,7 @@ async function buyBorderAccessory(accId, price) {
 }
 
 async function buyVipTopUp(planName, priceTag) {
-  let dmText = "Developer @pito, saya @" + currentUser + " ingin membeli " + planName + " seharga " + priceTag + ". Tolong diproses ya!";
+  var dmText = "Developer @pito, saya @" + currentUser + " ingin membeli " + planName + " seharga " + priceTag + ". Tolong diproses ya!";
   dmMessages.push({ id: 'dm_' + Date.now(), from: currentUser, to: DEV_NAME, text: dmText, time: Date.now() });
   await pushGitHubState({ dms: dmMessages });
   alert("📩 Permintaan pesanan terkirim ke DM Developer @pito!");
@@ -2114,8 +2154,8 @@ async function buyVipTopUp(planName, priceTag) {
 }
 
 async function claimDailyCoins() {
-  let today = new Date().toDateString();
-  if(userDailyClaim[currentUser] === today) { alert("Sudah diklaim hari ini!"); return; }
+  var today = new Date().toDateString();
+  if (userDailyClaim[currentUser] === today) { alert("Sudah diklaim hari ini!"); return; }
   userCoins += 100;
   userDailyClaim[currentUser] = today;
   updateCoinsDisplay();
@@ -2128,8 +2168,8 @@ async function claimDailyCoins() {
 }
 
 async function buyItem(itemId, price) {
-  if(ownedItems.includes(itemId)) { setActiveItem(itemId); return; }
-  if(userCoins < price) { alert("Koin tidak cukup!"); return; }
+  if (ownedItems.includes(itemId)) { setActiveItem(itemId); return; }
+  if (userCoins < price) { alert("Koin tidak cukup!"); return; }
   userCoins -= price;
   ownedItems.push(itemId);
   setActiveItem(itemId);
@@ -2137,19 +2177,19 @@ async function buyItem(itemId, price) {
 }
 
 function setActiveItem(itemId) {
-  if(itemId.startsWith('frame_') || itemId === 'admin_galaxy') {
+  if (itemId.startsWith('frame_') || itemId === 'admin_galaxy') {
     activeFrame = (activeFrame === itemId) ? "" : itemId;
     localStorage.setItem('chat_active_frame', activeFrame);
-  } else if(itemId.startsWith('bubble_')) {
+  } else if (itemId.startsWith('bubble_')) {
     activeBubble = (activeBubble === itemId) ? "" : itemId;
     localStorage.setItem('chat_active_bubble', activeBubble);
-  } else if(itemId.startsWith('name_')) {
+  } else if (itemId.startsWith('name_')) {
     activeNameEffect = (activeNameEffect === itemId) ? "" : itemId;
     localStorage.setItem('chat_active_name', activeNameEffect);
-  } else if(itemId.startsWith('text_')) {
+  } else if (itemId.startsWith('text_')) {
     activeTextEffect = (activeTextEffect === itemId) ? "" : itemId;
     localStorage.setItem('chat_active_text', activeTextEffect);
-  } else if(itemId.startsWith('font_')) {
+  } else if (itemId.startsWith('font_')) {
     activeFontEffect = (activeFontEffect === itemId) ? "" : itemId;
     localStorage.setItem('chat_active_font', activeFontEffect);
   }
@@ -2164,12 +2204,12 @@ async function saveMyBio(bioText) {
 }
 
 async function uploadGalleryPhoto(event) {
-  const file = event.target.files[0];
-  if(file) {
-    if(file.size > 2 * 1024 * 1024) { alert("Maksimal ukuran foto 2MB."); return; }
-    const reader = new FileReader();
+  var file = event.target.files[0];
+  if (file) {
+    if (file.size > 2 * 1024 * 1024) { alert("Maksimal ukuran foto 2MB."); return; }
+    var reader = new FileReader();
     reader.onload = async function(ev) {
-      if(!userGalleries[currentUser]) userGalleries[currentUser] = [];
+      if (!userGalleries[currentUser]) userGalleries[currentUser] = [];
       userGalleries[currentUser].push({ img: ev.target.result, likes: 0, likedBy: [], comments: [] });
       updateProfileView();
       await pushGitHubState({ galleries: userGalleries });
@@ -2179,40 +2219,40 @@ async function uploadGalleryPhoto(event) {
 }
 
 function buildAvatarHTML(username, avatarImg, frameId, shapeId, accessoryId) {
-  let initial = username ? username.charAt(0).toUpperCase() : 'U';
-  let picContent = avatarImg ? ('<img src="' + avatarImg + '">') : ('<span>' + initial + '</span>');
-  let shapeClass = "border-circle";
-  if(shapeId) {
-    let s = BORDER_SHAPES.find(x => x.id === shapeId);
-    if(s) shapeClass = s.class;
+  var initial = username ? username.charAt(0).toUpperCase() : 'U';
+  var picContent = avatarImg ? ('<img src="' + avatarImg + '">') : ('<span>' + initial + '</span>');
+  var shapeClass = "border-circle";
+  if (shapeId) {
+    var s = BORDER_SHAPES.find(function(x) { return x.id === shapeId; });
+    if (s) shapeClass = s.class;
   }
-  let ringClass = "border-shape-ring " + shapeClass;
-  let ringStyle = "";
-  let accessoryEmoji = "";
-  let isSupremeAcc = false;
+  var ringClass = "border-shape-ring " + shapeClass;
+  var ringStyle = "";
+  var accessoryEmoji = "";
+  var isSupremeAcc = false;
 
-  if(username === DEV_NAME || frameId === 'admin_galaxy') {
+  if (username === DEV_NAME || frameId === 'admin_galaxy') {
     ringClass += " dev-supreme-ring";
   }
-  if(frameId && frameId.startsWith('frame_')) {
-    let d = getEffectStyleData(frameId);
-    if(d) {
+  if (frameId && frameId.startsWith('frame_')) {
+    var d = getEffectStyleData(frameId);
+    if (d) {
       ringClass += " dyn-ring-live";
       ringStyle = "border-color: " + d.c1 + "; box-shadow: 0 0 10px " + d.c1 + ", inset 0 0 4px " + d.c1 + "; filter: hue-rotate(" + d.hue + "deg);";
     }
-  } else if(!ringClass.includes('dev-supreme-ring')) {
+  } else if (!ringClass.includes('dev-supreme-ring')) {
     ringStyle = "border-color: #38bdf8;";
   }
-  if(accessoryId && accessoryId !== 'acc_none') {
-    if(DEV_SUPREME_ACCESSORIES[accessoryId]) {
+  if (accessoryId && accessoryId !== 'acc_none') {
+    if (DEV_SUPREME_ACCESSORIES[accessoryId]) {
       accessoryEmoji = DEV_SUPREME_ACCESSORIES[accessoryId].emoji;
       isSupremeAcc = true;
     } else {
-      let accObj = BORDER_ACCESSORIES.find(a => a.id === accessoryId);
-      if(accObj) accessoryEmoji = accObj.emoji;
+      var accObj = BORDER_ACCESSORIES.find(function(a) { return a.id === accessoryId; });
+      if (accObj) accessoryEmoji = accObj.emoji;
     }
   }
-  let accessoryHTML = accessoryEmoji
+  var accessoryHTML = accessoryEmoji
     ? ('<div class="' + (isSupremeAcc ? 'frame-accessory-supreme' : 'frame-accessory-badge') + '">' + accessoryEmoji + '</div>')
     : "";
 
@@ -2220,46 +2260,46 @@ function buildAvatarHTML(username, avatarImg, frameId, shapeId, accessoryId) {
 }
 
 function updateProfileView() {
-  let pName = document.getElementById('profile-name');
-  if(pName) pName.textContent = currentUser;
-  let uCoins = document.getElementById('user-coins');
-  if(uCoins) uCoins.textContent = formatCompactNumber(userCoins);
-  let sCoins = document.getElementById('shop-coins');
-  if(sCoins) sCoins.textContent = formatCompactNumber(userCoins);
-  let pBio = document.getElementById('profile-bio-input');
-  if(pBio) pBio.value = userBios[currentUser] || "";
+  var pName = document.getElementById('profile-name');
+  if (pName) pName.textContent = currentUser;
+  var uCoins = document.getElementById('user-coins');
+  if (uCoins) uCoins.textContent = formatCompactNumber(userCoins);
+  var sCoins = document.getElementById('shop-coins');
+  if (sCoins) sCoins.textContent = formatCompactNumber(userCoins);
+  var pBio = document.getElementById('profile-bio-input');
+  if (pBio) pBio.value = userBios[currentUser] || "";
 
-  let privBtn = document.getElementById('privacy-toggle-btn');
+  var privBtn = document.getElementById('privacy-toggle-btn');
   if (privBtn) {
     privBtn.textContent = accountPrivacy[currentUser] ? "🔒 Akun: Privat" : "🌐 Akun: Publik";
   }
 
-  let fCount = document.getElementById('my-followers-count');
-  if(fCount) fCount.textContent = formatCompactNumber(getFollowerDisplayCount(currentUser));
-  let fgCount = document.getElementById('my-following-count');
-  if(fgCount) fgCount.textContent = formatCompactNumber(getFollowingUsers(currentUser).length);
+  var fCount = document.getElementById('my-followers-count');
+  if (fCount) fCount.textContent = formatCompactNumber(getFollowerDisplayCount(currentUser));
+  var fgCount = document.getElementById('my-following-count');
+  if (fgCount) fgCount.textContent = formatCompactNumber(getFollowingUsers(currentUser).length);
 
   renderWeeklyCheckinUI();
 
-  let today = new Date().toDateString();
-  let canClaim = (isUserPass(currentUser) || isUserVip(currentUser)) && (userDailyClaim[currentUser] !== today);
-  let dClaim = document.getElementById('daily-claim-box');
-  if(dClaim) dClaim.style.display = canClaim ? 'block' : 'none';
+  var today = new Date().toDateString();
+  var canClaim = (isUserPass(currentUser) || isUserVip(currentUser)) && (userDailyClaim[currentUser] !== today);
+  var dClaim = document.getElementById('daily-claim-box');
+  if (dClaim) dClaim.style.display = canClaim ? 'block' : 'none';
 
-  let avatarBox = document.getElementById('profile-avatar-box');
-  if(avatarBox) {
-    let fId = activeFrame || (currentUser === DEV_NAME ? 'admin_galaxy' : '');
+  var avatarBox = document.getElementById('profile-avatar-box');
+  if (avatarBox) {
+    var fId = activeFrame || (currentUser === DEV_NAME ? 'admin_galaxy' : '');
     avatarBox.innerHTML = buildAvatarHTML(currentUser, currentAvatar, fId, activeBorderShape, activeAccessory);
   }
 
-  let grid = document.getElementById('my-gallery-grid');
-  if(grid) {
+  var grid = document.getElementById('my-gallery-grid');
+  if (grid) {
     grid.innerHTML = '';
-    let myPhotos = userGalleries[currentUser] || [];
-    if(myPhotos.length === 0) {
+    var myPhotos = userGalleries[currentUser] || [];
+    if (myPhotos.length === 0) {
       grid.innerHTML = '<span style="font-size:11px; color:rgba(255,255,255,0.4); grid-column:span 3; text-align:center;">Belum ada foto galeri.</span>';
     } else {
-      myPhotos.forEach((photo, idx) => {
+      myPhotos.forEach(function(photo, idx) {
         grid.innerHTML += '<div class="gallery-item" onclick="openPhotoDetail(\'' + currentUser + '\', ' + idx + ')"><img src="' + photo.img + '"><div class="gallery-like-badge">❤️ ' + formatCompactNumber(photo.likes) + '</div></div>';
       });
     }
@@ -2271,18 +2311,18 @@ function openUserProfile(username) {
   viewingUser = username;
   document.getElementById('modal-username').textContent = username;
   document.getElementById('modal-user-bio').textContent = userBios[username] || "Tidak ada bio.";
-  let vipContainer = document.getElementById('modal-vip-badge-container');
+  var vipContainer = document.getElementById('modal-vip-badge-container');
   vipContainer.innerHTML = (isUserVip(username) || isUserPass(username) || username === DEV_NAME) ? '<span class="vip-badge">🌟 VIP PASS</span>' : '';
 
-  let canView = canViewPrivateProfile(username);
-  let privTag = document.getElementById('modal-privacy-tag');
+  var canView = canViewPrivateProfile(username);
+  var privTag = document.getElementById('modal-privacy-tag');
   if (privTag) {
     privTag.textContent = accountPrivacy[username]
       ? (canView ? "🔒 Akun Privat (Sudah Diikuti)" : "🔒 Akun Privat — Ikuti & tunggu ACC untuk lihat foto")
       : "🌐 Akun Publik";
   }
 
-  let meta = userProfilesMeta[username] || {};
+  var meta = userProfilesMeta[username] || {};
   document.getElementById('modal-user-avatar').innerHTML = buildAvatarHTML(
     username,
     canView ? (meta.avatar || '') : '',
@@ -2294,17 +2334,17 @@ function openUserProfile(username) {
   document.getElementById('modal-followers-num').textContent = formatCompactNumber(getFollowerDisplayCount(username));
   document.getElementById('modal-following-num').textContent = formatCompactNumber(getFollowingUsers(username).length);
 
-  let followBtn = document.getElementById('modal-follow-btn');
-  let blockBtn = document.getElementById('modal-block-btn');
-  if(username === currentUser) {
+  var followBtn = document.getElementById('modal-follow-btn');
+  var blockBtn = document.getElementById('modal-block-btn');
+  if (username === currentUser) {
     followBtn.style.display = 'none';
     blockBtn.style.display = 'none';
   } else {
     followBtn.style.display = 'block';
     blockBtn.style.display = 'block';
-    let followers = userFollowers[username] || [];
-    let pendingReqs = followRequests[username] || [];
-    if(followers.includes(currentUser)) {
+    var followers = userFollowers[username] || [];
+    var pendingReqs = followRequests[username] || [];
+    if (followers.includes(currentUser)) {
       followBtn.textContent = "✅ Mengikuti";
       followBtn.style.background = "#475569";
     } else if (pendingReqs.includes(currentUser)) {
@@ -2314,17 +2354,22 @@ function openUserProfile(username) {
       followBtn.textContent = accountPrivacy[username] ? "🔒 Minta Ikuti" : "➕ Ikuti";
       followBtn.style.background = "#10b981";
     }
-    let blockedList = userBlocks[currentUser] || [];
-    if(blockedList.includes(username)) { blockBtn.textContent = "🔓 Buka Blokir"; blockBtn.style.background = "#0284c7"; }
-    else { blockBtn.textContent = "🚫 Blokir"; blockBtn.style.background = "#ef4444"; }
+    var blockedList = userBlocks[currentUser] || [];
+    if (blockedList.includes(username)) {
+      blockBtn.textContent = "🔓 Buka Blokir";
+      blockBtn.style.background = "#0284c7";
+    } else {
+      blockBtn.textContent = "🚫 Blokir";
+      blockBtn.style.background = "#ef4444";
+    }
   }
 
-  let grid = document.getElementById('modal-user-gallery');
+  var grid = document.getElementById('modal-user-gallery');
   grid.innerHTML = '';
   if (!canView) {
     grid.innerHTML = '<span style="font-size:11px; color:#fbbf24; grid-column:span 3; text-align:center; padding:10px;">🔒 Galeri terkunci. Ikuti akun ini dulu!</span>';
   } else {
-    (userGalleries[username] || []).forEach((photo, idx) => {
+    (userGalleries[username] || []).forEach(function(photo, idx) {
       grid.innerHTML += '<div class="gallery-item" onclick="openPhotoDetail(\'' + username + '\', ' + idx + ')"><img src="' + photo.img + '"><div class="gallery-like-badge">❤️ ' + formatCompactNumber(photo.likes) + '</div></div>';
     });
   }
@@ -2332,37 +2377,37 @@ function openUserProfile(username) {
 }
 
 async function toggleBlockUser() {
-  if(!userBlocks[currentUser]) userBlocks[currentUser] = [];
-  let idx = userBlocks[currentUser].indexOf(viewingUser);
-  if(idx > -1) userBlocks[currentUser].splice(idx, 1);
+  if (!userBlocks[currentUser]) userBlocks[currentUser] = [];
+  var idx = userBlocks[currentUser].indexOf(viewingUser);
+  if (idx > -1) userBlocks[currentUser].splice(idx, 1);
   else userBlocks[currentUser].push(viewingUser);
   await pushGitHubState({ blocks: userBlocks });
   openUserProfile(viewingUser);
 }
 
 async function toggleFollowUser() {
-  if(!userFollowers[viewingUser]) userFollowers[viewingUser] = [];
-  if(!followRequests[viewingUser]) followRequests[viewingUser] = [];
+  if (!userFollowers[viewingUser]) userFollowers[viewingUser] = [];
+  if (!followRequests[viewingUser]) followRequests[viewingUser] = [];
 
-  let idx = userFollowers[viewingUser].indexOf(currentUser);
-  if(idx > -1) {
+  var idx = userFollowers[viewingUser].indexOf(currentUser);
+  if (idx > -1) {
     userFollowers[viewingUser].splice(idx, 1);
-    await pushGitHubState({ userFollowers });
+    await pushGitHubState({ userFollowers: userFollowers });
     openUserProfile(viewingUser);
     return;
   }
 
-  let reqIdx = followRequests[viewingUser].indexOf(currentUser);
+  var reqIdx = followRequests[viewingUser].indexOf(currentUser);
   if (reqIdx > -1) {
     followRequests[viewingUser].splice(reqIdx, 1);
-    await pushGitHubState({ followRequests });
+    await pushGitHubState({ followRequests: followRequests });
     openUserProfile(viewingUser);
     return;
   }
 
   if (accountPrivacy[viewingUser] && currentUser !== DEV_NAME) {
     followRequests[viewingUser].push(currentUser);
-    await pushGitHubState({ followRequests });
+    await pushGitHubState({ followRequests: followRequests });
     alert("🔒 Permintaan follow terkirim! Tunggu di-ACC di Kotak Masuk mereka.");
     openUserProfile(viewingUser);
     return;
@@ -2372,11 +2417,13 @@ async function toggleFollowUser() {
   await pushInboxNotification(viewingUser, {
     text: "👤 @" + currentUser + " mulai mengikuti kamu!"
   });
-  await pushGitHubState({ userFollowers });
+  await pushGitHubState({ userFollowers: userFollowers });
   openUserProfile(viewingUser);
 }
 
-function closeUserProfileModal() { document.getElementById('user-profile-modal').style.display = 'none'; }
+function closeUserProfileModal() {
+  document.getElementById('user-profile-modal').style.display = 'none';
+}
 
 let activePhotoContext = { username: "", index: -1 };
 function openPhotoDetail(username, index) {
@@ -2384,24 +2431,25 @@ function openPhotoDetail(username, index) {
     alert("🔒 Akun ini privat! Ikuti dan tunggu di-ACC dulu.");
     return;
   }
-  activePhotoContext = { username, index };
-  let photo = (userGalleries[username] || [])[index];
-  if(!photo) return;
+  activePhotoContext = { username: username, index: index };
+  var photo = (userGalleries[username] || [])[index];
+  if (!photo) return;
   document.getElementById('detail-photo-img').src = photo.img;
   document.getElementById('detail-like-count').textContent = formatCompactNumber(photo.likes);
-  let isLiked = (photo.likedBy || []).includes(currentUser);
+  var isLiked = (photo.likedBy || []).includes(currentUser);
   document.getElementById('detail-like-btn').style.background = isLiked ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255,255,255,0.1)';
   renderPhotoComments();
   document.getElementById('photo-detail-modal').style.display = 'flex';
 }
 
 async function triggerDetailLike() {
-  let { username, index } = activePhotoContext;
-  let photos = userGalleries[username];
-  if(!photos || !photos[index]) return;
-  if(!photos[index].likedBy) photos[index].likedBy = [];
-  let likedIdx = photos[index].likedBy.indexOf(currentUser);
-  if(likedIdx > -1) {
+  var username = activePhotoContext.username;
+  var index = activePhotoContext.index;
+  var photos = userGalleries[username];
+  if (!photos || !photos[index]) return;
+  if (!photos[index].likedBy) photos[index].likedBy = [];
+  var likedIdx = photos[index].likedBy.indexOf(currentUser);
+  if (likedIdx > -1) {
     photos[index].likedBy.splice(likedIdx, 1);
     photos[index].likes--;
   } else {
@@ -2417,27 +2465,36 @@ async function triggerDetailLike() {
 }
 
 function sharePhotoLink() {
-  navigator.clipboard.writeText(window.location.href);
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(window.location.href).catch(function() {});
+  }
   alert("Tautan foto berhasil disalin!");
 }
 
 function renderPhotoComments() {
-  let { username, index } = activePhotoContext;
-  let photo = userGalleries[username][index];
-  let commentContainer = document.getElementById('detail-comments-list');
+  var username = activePhotoContext.username;
+  var index = activePhotoContext.index;
+  var photo = userGalleries[username][index];
+  var commentContainer = document.getElementById('detail-comments-list');
   commentContainer.innerHTML = '';
-  let comments = photo.comments || [];
-  if(comments.length === 0) { commentContainer.innerHTML = '<span style="color:rgba(255,255,255,0.4); text-align:center;">Belum ada komentar.</span>'; return; }
-  comments.forEach(c => { commentContainer.innerHTML += '<div><b>' + sanitizeHTML(c.user) + ':</b> ' + sanitizeHTML(c.text) + '</div>'; });
+  var comments = photo.comments || [];
+  if (comments.length === 0) {
+    commentContainer.innerHTML = '<span style="color:rgba(255,255,255,0.4); text-align:center;">Belum ada komentar.</span>';
+    return;
+  }
+  comments.forEach(function(c) {
+    commentContainer.innerHTML += '<div><b>' + sanitizeHTML(c.user) + ':</b> ' + sanitizeHTML(c.text) + '</div>';
+  });
 }
 
 async function postPhotoComment() {
-  let input = document.getElementById('detail-comment-input');
-  let text = sanitizeHTML(input.value.trim());
-  if(!text) return;
-  let { username, index } = activePhotoContext;
-  let photo = userGalleries[username][index];
-  if(!photo.comments) photo.comments = [];
+  var input = document.getElementById('detail-comment-input');
+  var text = sanitizeHTML(input.value.trim());
+  if (!text) return;
+  var username = activePhotoContext.username;
+  var index = activePhotoContext.index;
+  var photo = userGalleries[username][index];
+  if (!photo.comments) photo.comments = [];
   photo.comments.push({ user: currentUser, text: text });
   input.value = '';
   renderPhotoComments();
@@ -2446,15 +2503,15 @@ async function postPhotoComment() {
 
 function setReply(username, text) {
   currentReplyData = { replyToUser: username, replyToText: text };
-  let bar = document.getElementById('chat-reply-preview');
-  let dmBar = document.getElementById('dm-reply-preview');
-  if(document.getElementById('tab-chat').classList.contains('active')) {
-    if(bar) bar.style.display = 'flex';
+  var bar = document.getElementById('chat-reply-preview');
+  var dmBar = document.getElementById('dm-reply-preview');
+  if (document.getElementById('tab-chat').classList.contains('active')) {
+    if (bar) bar.style.display = 'flex';
     document.getElementById('chat-reply-target-user').textContent = username;
     document.getElementById('chat-reply-target-text').textContent = text;
     document.getElementById('message-input').focus();
-  } else if(activeDMTarget) {
-    if(dmBar) dmBar.style.display = 'flex';
+  } else if (activeDMTarget) {
+    if (dmBar) dmBar.style.display = 'flex';
     document.getElementById('dm-reply-target-user').textContent = username;
     document.getElementById('dm-reply-target-text').textContent = text;
     document.getElementById('dm-input').focus();
@@ -2463,20 +2520,20 @@ function setReply(username, text) {
 
 function cancelReply() {
   currentReplyData = null;
-  let bar = document.getElementById('chat-reply-preview');
-  let dmBar = document.getElementById('dm-reply-preview');
-  if(bar) bar.style.display = 'none';
-  if(dmBar) dmBar.style.display = 'none';
+  var bar = document.getElementById('chat-reply-preview');
+  var dmBar = document.getElementById('dm-reply-preview');
+  if (bar) bar.style.display = 'none';
+  if (dmBar) dmBar.style.display = 'none';
 }
 
 async function sendMessage() {
-  let input = document.getElementById('message-input');
-  if(!input) return;
-  let text = sanitizeHTML(input.value.trim());
-  if(!text) return;
-  let isDev = (currentUser === DEV_NAME);
+  var input = document.getElementById('message-input');
+  if (!input) return;
+  var text = sanitizeHTML(input.value.trim());
+  if (!text) return;
+  var isDev = (currentUser === DEV_NAME);
 
-  let newMsg = {
+  var newMsg = {
     id: 'msg_' + Date.now() + "_" + Math.random(),
     user: currentUser,
     avatar: currentAvatar,
@@ -2499,27 +2556,29 @@ async function sendMessage() {
   renderMessages();
 
   await pushGitHubState({
-    messages,
+    messages: messages,
     coins: { [currentUser]: userCoins }
   });
 }
 
-function checkEnter(event) { if(event.key === 'Enter') sendMessage(); }
+function checkEnter(event) {
+  if (event.key === 'Enter') sendMessage();
+}
 
 function renderMessageElement(msg, container) {
-  let isDevUser = (msg.user === DEV_NAME);
-  let isVipUser = isUserVip(msg.user) || isUserPass(msg.user) || isDevUser;
-  let isMe = (msg.user === currentUser);
+  var isDevUser = (msg.user === DEV_NAME);
+  var isVipUser = isUserVip(msg.user) || isUserPass(msg.user) || isDevUser;
+  var isMe = (msg.user === currentUser);
 
-  let div = document.createElement('div');
+  var div = document.createElement('div');
   div.className = "message " + (isMe ? "my-message" : "other-message");
-  div.onclick = () => setReply(msg.user, msg.text);
+  div.onclick = function() { setReply(msg.user, msg.text); };
 
-  if(msg.bubble === 'dev_supreme_bubble' || (isDevUser && !msg.bubble)) {
+  if (msg.bubble === 'dev_supreme_bubble' || (isDevUser && !msg.bubble)) {
     div.classList.add('dev-supreme-bubble');
-  } else if(msg.bubble && msg.bubble.startsWith('bubble_')) {
-    let bd = getEffectStyleData(msg.bubble);
-    if(bd) {
+  } else if (msg.bubble && msg.bubble.startsWith('bubble_')) {
+    var bd = getEffectStyleData(msg.bubble);
+    if (bd) {
       div.classList.add('dyn-bubble-live');
       div.style.setProperty('--bub-bg', bd.bg);
       div.style.setProperty('--bub-border', bd.c1);
@@ -2528,28 +2587,28 @@ function renderMessageElement(msg, container) {
     }
   }
 
-  let headerDiv = document.createElement('div');
+  var headerDiv = document.createElement('div');
   headerDiv.className = 'message-header';
 
-  let avatarWrapper = document.createElement('div');
-  let fId = msg.frame || (isDevUser ? 'admin_galaxy' : '');
-  let accId = msg.accessory || 'acc_none';
-  let canView = canViewPrivateProfile(msg.user);
+  var avatarWrapper = document.createElement('div');
+  var fId = msg.frame || (isDevUser ? 'admin_galaxy' : '');
+  var accId = msg.accessory || 'acc_none';
+  var canView = canViewPrivateProfile(msg.user);
   avatarWrapper.innerHTML = buildAvatarHTML(msg.user, canView ? msg.avatar : '', fId, msg.shape || 'shape_circle', accId);
-  avatarWrapper.onclick = (e) => { e.stopPropagation(); openUserProfile(msg.user); };
+  avatarWrapper.onclick = function(e) { e.stopPropagation(); openUserProfile(msg.user); };
 
-  let nameSpan = document.createElement('span');
+  var nameSpan = document.createElement('span');
   nameSpan.textContent = msg.user;
   nameSpan.style.cursor = 'pointer';
-  nameSpan.onclick = (e) => { e.stopPropagation(); openUserProfile(msg.user); };
+  nameSpan.onclick = function(e) { e.stopPropagation(); openUserProfile(msg.user); };
 
-  if(msg.nameEffect === 'supreme' || (isDevUser && !msg.nameEffect)) {
+  if (msg.nameEffect === 'supreme' || (isDevUser && !msg.nameEffect)) {
     nameSpan.className = 'dev-supreme-name';
-    let themeInfo = getDevThemeCSS(activeDevTheme);
+    var themeInfo = getDevThemeCSS(activeDevTheme);
     nameSpan.style.backgroundImage = themeInfo.nameGrad;
-  } else if(msg.nameEffect && msg.nameEffect.startsWith('name_')) {
-    let nd = getEffectStyleData(msg.nameEffect);
-    if(nd) {
+  } else if (msg.nameEffect && msg.nameEffect.startsWith('name_')) {
+    var nd = getEffectStyleData(msg.nameEffect);
+    if (nd) {
       nameSpan.className = 'dyn-name-live';
       nameSpan.style.setProperty('--name-grad', "linear-gradient(45deg, " + nd.c1 + ", " + nd.c2 + ", #ffffff, " + nd.c1 + ")");
     }
@@ -2561,36 +2620,36 @@ function renderMessageElement(msg, container) {
   headerDiv.appendChild(avatarWrapper);
   headerDiv.appendChild(nameSpan);
 
-  if(isVipUser) {
-    let badge = document.createElement('span');
+  if (isVipUser) {
+    var badge = document.createElement('span');
     badge.className = isDevUser ? 'dev-badge' : 'vip-badge';
     badge.textContent = isDevUser ? 'DEVELOPER' : 'VIP';
-    if(isDevUser) {
-      let themeInfo = getDevThemeCSS(activeDevTheme);
-      badge.style.backgroundImage = themeInfo.badgeBg;
+    if (isDevUser) {
+      var devThemeInfo = getDevThemeCSS(activeDevTheme);
+      badge.style.backgroundImage = devThemeInfo.badgeBg;
     }
     headerDiv.appendChild(badge);
   }
 
   div.appendChild(headerDiv);
 
-  if(msg.replyTo) {
-    let replyBox = document.createElement('div');
+  if (msg.replyTo) {
+    var replyBox = document.createElement('div');
     replyBox.className = 'reply-quote-box';
     replyBox.innerHTML = '<b>@' + sanitizeHTML(msg.replyTo.user) + '</b><br>' + sanitizeHTML(msg.replyTo.text);
     div.appendChild(replyBox);
   }
 
-  let textDiv = document.createElement('div');
+  var textDiv = document.createElement('div');
   textDiv.className = 'text';
   textDiv.textContent = msg.text;
-  if(msg.fontEffect && msg.fontEffect.startsWith('font_')) {
-    let fd = getFontStyleData(msg.fontEffect);
-    if(fd) textDiv.style.cssText = fd.style;
+  if (msg.fontEffect && msg.fontEffect.startsWith('font_')) {
+    var fd = getFontStyleData(msg.fontEffect);
+    if (fd) textDiv.style.cssText = fd.style;
   }
-  if(msg.textEffect && msg.textEffect.startsWith('text_')) {
-    let td = getEffectStyleData(msg.textEffect);
-    if(td) {
+  if (msg.textEffect && msg.textEffect.startsWith('text_')) {
+    var td = getEffectStyleData(msg.textEffect);
+    if (td) {
       textDiv.classList.add('dyn-text-live');
       textDiv.style.setProperty('--txt-grad', "linear-gradient(45deg, " + td.c1 + ", " + td.c2 + ", #ffffff, " + td.c1 + ")");
     }
@@ -2601,44 +2660,46 @@ function renderMessageElement(msg, container) {
 }
 
 function renderMessages() {
-  let container = document.getElementById('chat-container');
-  if(!container) return;
+  var container = document.getElementById('chat-container');
+  if (!container) return;
   container.innerHTML = '';
-  messages.forEach(msg => renderMessageElement(msg, container));
+  messages.forEach(function(msg) { renderMessageElement(msg, container); });
   container.scrollTop = container.scrollHeight;
 }
 
 function updateCoinsDisplay() {
-  let uc = document.getElementById('user-coins');
-  if(uc) uc.textContent = formatCompactNumber(userCoins);
-  let sc = document.getElementById('shop-coins');
-  if(sc) sc.textContent = formatCompactNumber(userCoins);
+  var uc = document.getElementById('user-coins');
+  if (uc) uc.textContent = formatCompactNumber(userCoins);
+  var sc = document.getElementById('shop-coins');
+  if (sc) sc.textContent = formatCompactNumber(userCoins);
 }
 
 let activeDMTarget = "";
 
 function renderDMProfileList() {
-  let container = document.getElementById('dm-profiles-container');
-  if(!container) return;
+  var container = document.getElementById('dm-profiles-container');
+  if (!container) return;
   container.innerHTML = '';
-  let users = Object.keys(userDatabase).filter(u => u !== currentUser);
-  let activeOnline = getActiveOnlineMap();
+  var users = Object.keys(userDatabase).filter(function(u) { return u !== currentUser; });
+  var activeOnline = getActiveOnlineMap();
 
-  if(users.length === 0) {
+  if (users.length === 0) {
     container.innerHTML = '<p style="font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">Belum ada pengguna lain.</p>';
     return;
   }
-  users.forEach(u => {
-    let isOnline = Boolean(activeOnline[u]);
-    let lastChat = "Belum ada percakapan...";
-    let userDMs = dmMessages.filter(m => (m.from === currentUser && m.to === u) || (m.from === u && m.to === currentUser));
-    if(userDMs.length > 0) {
-      let latest = userDMs[userDMs.length - 1];
+  users.forEach(function(u) {
+    var isOnline = Boolean(activeOnline[u]);
+    var lastChat = "Belum ada percakapan...";
+    var userDMs = dmMessages.filter(function(m) {
+      return (m.from === currentUser && m.to === u) || (m.from === u && m.to === currentUser);
+    });
+    if (userDMs.length > 0) {
+      var latest = userDMs[userDMs.length - 1];
       lastChat = (latest.from === currentUser ? "Anda: " : "") + latest.text;
     }
-    let meta = userProfilesMeta[u] || {};
-    let canView = canViewPrivateProfile(u);
-    let avatarSnippet = buildAvatarHTML(u, canView ? (meta.avatar || '') : '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
+    var meta = userProfilesMeta[u] || {};
+    var canView = canViewPrivateProfile(u);
+    var avatarSnippet = buildAvatarHTML(u, canView ? (meta.avatar || '') : '', meta.frame || '', meta.shape || 'shape_circle', meta.accessory || 'acc_none');
     container.innerHTML +=
       '<div class="dm-user-card" onclick="openDMChat(\'' + u + '\')">' +
         '<div class="dm-user-info">' +
@@ -2670,11 +2731,11 @@ function backToDMList() {
 }
 
 async function sendDM() {
-  let input = document.getElementById('dm-input');
-  if(!input) return;
-  let text = sanitizeHTML(input.value.trim());
-  if(!text || !activeDMTarget) return;
-  let isDev = (currentUser === DEV_NAME);
+  var input = document.getElementById('dm-input');
+  if (!input) return;
+  var text = sanitizeHTML(input.value.trim());
+  if (!text || !activeDMTarget) return;
+  var isDev = (currentUser === DEV_NAME);
 
   dmMessages.push({
     id: 'dm_' + Date.now() + "_" + Math.random(),
@@ -2699,28 +2760,32 @@ async function sendDM() {
   await pushGitHubState({ dms: dmMessages });
 }
 
-function checkDMPress(event) { if(event.key === 'Enter') sendDM(); }
+function checkDMPress(event) {
+  if (event.key === 'Enter') sendDM();
+}
 
 async function deleteDMMessage(msgId) {
-  if(confirm("Hapus pesan ini?")) {
-    dmMessages = dmMessages.filter(m => m.id !== msgId);
+  if (confirm("Hapus pesan ini?")) {
+    dmMessages = dmMessages.filter(function(m) { return m.id !== msgId; });
     renderDM(activeDMTarget);
     await pushGitHubState({ dms: dmMessages });
   }
 }
 
 function renderDM(targetUser) {
-  let container = document.getElementById('dm-container');
-  if(!container) return;
+  var container = document.getElementById('dm-container');
+  if (!container) return;
   container.innerHTML = '';
-  let filtered = dmMessages.filter(m => (m.from === currentUser && m.to === targetUser) || (m.from === targetUser && m.to === currentUser));
-  if(filtered.length === 0) {
+  var filtered = dmMessages.filter(function(m) {
+    return (m.from === currentUser && m.to === targetUser) || (m.from === targetUser && m.to === currentUser);
+  });
+  if (filtered.length === 0) {
     container.innerHTML = '<div style="font-size:11px; color:rgba(255,255,255,0.4); text-align:center; margin-top:20px;">Mulai percakapan privat dengan mengirim pesan di bawah.</div>';
     return;
   }
-  filtered.forEach(dm => {
-    let senderMeta = userProfilesMeta[dm.from] || {};
-    let msgObj = {
+  filtered.forEach(function(dm) {
+    var senderMeta = userProfilesMeta[dm.from] || {};
+    var msgObj = {
       user: dm.from,
       avatar: dm.avatar || senderMeta.avatar || "",
       text: dm.text,
@@ -2734,12 +2799,12 @@ function renderDM(targetUser) {
       accessory: dm.accessory || senderMeta.accessory || "acc_none"
     };
     renderMessageElement(msgObj, container);
-    let lastChild = container.lastElementChild;
-    if(dm.from === currentUser && lastChild) {
-      let delBtn = document.createElement('button');
+    var lastChild = container.lastElementChild;
+    if (dm.from === currentUser && lastChild) {
+      var delBtn = document.createElement('button');
       delBtn.innerHTML = '🗑️ Hapus';
       delBtn.style.cssText = 'background:none; border:none; color:rgba(255,255,255,0.5); font-size:9px; cursor:pointer; align-self:flex-end; margin-top:2px;';
-      delBtn.onclick = () => deleteDMMessage(dm.id);
+      delBtn.onclick = function() { deleteDMMessage(dm.id); };
       container.appendChild(delBtn);
     }
   });
@@ -2750,19 +2815,19 @@ let selectedGiftPremTarget = "";
 let selectedGiftCoinTarget = "";
 
 function handleGiftSearchInput(kind, query) {
-  const dropdownId = kind === 'prem' ? 'dev-gift-prem-dropdown' : 'dev-gift-coin-dropdown';
-  const dropdown = document.getElementById(dropdownId);
+  var dropdownId = kind === 'prem' ? 'dev-gift-prem-dropdown' : 'dev-gift-coin-dropdown';
+  var dropdown = document.getElementById(dropdownId);
   if (!dropdown) return;
   dropdown.innerHTML = '';
-  const q = query.trim().toLowerCase();
+  var q = query.trim().toLowerCase();
   if (!q) { dropdown.style.display = 'none'; return; }
-  const matched = Object.keys(userDatabase).filter(u => u.includes(q));
+  var matched = Object.keys(userDatabase).filter(function(u) { return u.includes(q); });
   if (matched.length === 0) { dropdown.style.display = 'none'; return; }
-  matched.forEach(u => {
-    const item = document.createElement('div');
+  matched.forEach(function(u) {
+    var item = document.createElement('div');
     item.className = 'autocomplete-item';
     item.innerHTML = '<span style="font-size:12px; font-weight:bold;">@' + sanitizeHTML(u) + '</span>';
-    item.onclick = () => {
+    item.onclick = function() {
       if (kind === 'prem') {
         selectedGiftPremTarget = u;
         document.getElementById('dev-gift-prem-search').value = u;
@@ -2783,18 +2848,18 @@ let selectedBotTarget = "";
 let selectedBotPhotoIndex = -1;
 
 async function loadSecurityAuditLogs() {
-  if(currentUser !== DEV_NAME) return;
+  if (currentUser !== DEV_NAME) return;
   try {
-    let res = await fetch('/api/security/logs', { cache: 'no-store' });
-    if(res.ok) {
-      let logs = await res.json();
-      let container = document.getElementById('security-logs-container');
+    var res = await fetch('/api/security/logs', { cache: 'no-store' });
+    if (res.ok) {
+      var logs = await res.json();
+      var container = document.getElementById('security-logs-container');
       container.innerHTML = '';
-      if(!logs || logs.length === 0) {
+      if (!logs || logs.length === 0) {
         container.innerHTML = '<span style="font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">Belum ada percobaan serangan atau VPN tercatat.</span>';
       } else {
-        logs.forEach(log => {
-          let timeStr = new Date(log.time).toLocaleTimeString();
+        logs.forEach(function(log) {
+          var timeStr = new Date(log.time).toLocaleTimeString();
           container.innerHTML +=
             '<div style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); padding:6px; border-radius:6px; font-size:11px; margin-bottom:4px;">' +
               '<div style="color:#fca5a5; font-weight:bold;">🚨 ' + log.toolUsed + ' (' + timeStr + ')</div>' +
@@ -2805,22 +2870,22 @@ async function loadSecurityAuditLogs() {
         });
       }
     }
-  } catch(e) {
+  } catch (e) {
     console.error("Gagal memuat log keamanan:", e);
   }
 }
 
 async function openDevModal() {
-  if(currentUser !== DEV_NAME) { alert("Hanya Developer Pito!"); return; }
+  if (currentUser !== DEV_NAME) { alert("Hanya Developer Pito!"); return; }
   await pullGitHubState();
-  let activeOnline = getActiveOnlineMap();
-  let stalkingList = document.getElementById('stalking-users-list');
+  var activeOnline = getActiveOnlineMap();
+  var stalkingList = document.getElementById('stalking-users-list');
   stalkingList.innerHTML = '';
-  let count = 0;
+  var count = 0;
 
-  for(let u in userDatabase) {
-    let isOnline = Boolean(activeOnline[u]);
-    if(isOnline) count++;
+  for (var u in userDatabase) {
+    var isOnline = Boolean(activeOnline[u]);
+    if (isOnline) count++;
     stalkingList.innerHTML +=
       '<div class="stalking-user-row">' +
         '<span>👤 <b>' + u + '</b> ' + (isOnline ? '🟢 (Online)' : '⚪ (Offline)') + '</span>' +
@@ -2841,17 +2906,17 @@ async function openDevModal() {
 }
 
 function renderDevBugReports() {
-  let listEl = document.getElementById('dev-bug-reports-list');
-  let countEl = document.getElementById('bug-report-count');
-  if(!listEl) return;
+  var listEl = document.getElementById('dev-bug-reports-list');
+  var countEl = document.getElementById('bug-report-count');
+  if (!listEl) return;
   listEl.innerHTML = '';
-  if(countEl) countEl.textContent = bugReports.length;
-  if(bugReports.length === 0) {
+  if (countEl) countEl.textContent = bugReports.length;
+  if (bugReports.length === 0) {
     listEl.innerHTML = '<span style="font-size:10px; color:rgba(255,255,255,0.4); text-align:center;">Belum ada laporan bug.</span>';
     return;
   }
-  bugReports.forEach((bug, idx) => {
-    let dateStr = new Date(bug.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  bugReports.forEach(function(bug, idx) {
+    var dateStr = new Date(bug.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     listEl.innerHTML +=
       '<div style="background:rgba(30,41,59,0.7); padding:6px 8px; border-radius:6px; font-size:11px; margin-bottom:4px;">' +
         '<div style="display:flex; justify-content:space-between;"><b style="color:#f87171;">@' + sanitizeHTML(bug.user) + '</b><span style="font-size:9px;">' + dateStr + '</span></div>' +
@@ -2862,17 +2927,17 @@ function renderDevBugReports() {
 }
 
 function renderDevLostReports() {
-  let listEl = document.getElementById('dev-lost-reports-list');
-  let countEl = document.getElementById('lost-report-count');
-  if(!listEl) return;
+  var listEl = document.getElementById('dev-lost-reports-list');
+  var countEl = document.getElementById('lost-report-count');
+  if (!listEl) return;
   listEl.innerHTML = '';
-  if(countEl) countEl.textContent = lostReports.length;
-  if(lostReports.length === 0) {
+  if (countEl) countEl.textContent = lostReports.length;
+  if (lostReports.length === 0) {
     listEl.innerHTML = '<span style="font-size:10px; color:rgba(255,255,255,0.4); text-align:center;">Belum ada laporan kehilangan akun.</span>';
     return;
   }
-  lostReports.forEach((rep, idx) => {
-    let dateStr = new Date(rep.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  lostReports.forEach(function(rep, idx) {
+    var dateStr = new Date(rep.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     listEl.innerHTML +=
       '<div style="background:rgba(30,41,59,0.7); padding:6px 8px; border-radius:6px; font-size:11px; margin-bottom:4px;">' +
         '<div style="display:flex; justify-content:space-between;"><b style="color:#fbbf24;">Akun: @' + sanitizeHTML(rep.username) + '</b><span style="font-size:9px;">' + dateStr + '</span></div>' +
@@ -2885,22 +2950,22 @@ function renderDevLostReports() {
 async function resolveBugReport(index) {
   bugReports.splice(index, 1);
   renderDevBugReports();
-  await pushGitHubState({ bugReports });
+  await pushGitHubState({ bugReports: bugReports });
 }
 
 async function resolveLostReport(index) {
   lostReports.splice(index, 1);
   renderDevLostReports();
-  await pushGitHubState({ lostReports });
+  await pushGitHubState({ lostReports: lostReports });
 }
 
 function filterDevSearchAccounts(query) {
-  let listEl = document.getElementById('dev-search-acc-list');
-  if(!listEl) return;
+  var listEl = document.getElementById('dev-search-acc-list');
+  if (!listEl) return;
   listEl.innerHTML = '';
-  let q = query.trim().toLowerCase();
-  for(let u in userDatabase) {
-    if(!q || u.includes(q)) {
+  var q = query.trim().toLowerCase();
+  for (var u in userDatabase) {
+    if (!q || u.includes(q)) {
       listEl.innerHTML += '<div style="background:rgba(30,41,59,0.6); padding:5px 8px; border-radius:6px; font-size:11px;">👤 <b>' + u + '</b> | Pass: <code style="color:#38bdf8;">' + userDatabase[u] + '</code></div>';
     }
   }
@@ -2911,39 +2976,39 @@ function closeDevModal() {
 }
 
 async function devExecuteGivePremium() {
-  if(currentUser !== DEV_NAME) return;
-  let targetUser = (selectedGiftPremTarget || document.getElementById('dev-gift-prem-search').value || "").trim().toLowerCase();
+  if (currentUser !== DEV_NAME) return;
+  var targetUser = (selectedGiftPremTarget || document.getElementById('dev-gift-prem-search').value || "").trim().toLowerCase();
   if (!targetUser || !userDatabase[targetUser]) {
     alert("Pilih username target yang valid lewat search!");
     return;
   }
-  let tier = document.getElementById('dev-give-tier').value;
-  let now = Date.now();
-  let expireTime = now;
-  let tierName = "";
-  if(tier === '2days') { expireTime = now + (2 * 86400000); tierName = "Premium 2 Hari"; }
-  else if(tier === '1month') { expireTime = now + (30 * 86400000); tierName = "Premium 1 Bulan"; }
-  else if(tier === '3months') { expireTime = now + (90 * 86400000); tierName = "Premium 3 Bulan"; }
+  var tier = document.getElementById('dev-give-tier').value;
+  var now = Date.now();
+  var expireTime = now;
+  var tierName = "";
+  if (tier === '2days') { expireTime = now + (2 * 86400000); tierName = "Premium 2 Hari"; }
+  else if (tier === '1month') { expireTime = now + (30 * 86400000); tierName = "Premium 1 Bulan"; }
+  else if (tier === '3months') { expireTime = now + (90 * 86400000); tierName = "Premium 3 Bulan"; }
   else { expireTime = 0; tierName = "Premium Permanen"; }
 
-  userVipStatus[targetUser] = { expireTime };
+  userVipStatus[targetUser] = { expireTime: expireTime };
   await pushGitHubState({ vipStatus: userVipStatus });
   alert("👑 Berhasil memberikan " + tierName + " kepada @" + targetUser + "!");
   closeDevModal();
 }
 
 function handleBotSearchInput(query) {
-  let dropdown = document.getElementById('bot-autocomplete-dropdown');
+  var dropdown = document.getElementById('bot-autocomplete-dropdown');
   dropdown.innerHTML = '';
-  let q = query.trim().toLowerCase();
-  if(!q) { dropdown.style.display = 'none'; return; }
-  let matchedUsers = Object.keys(userDatabase).filter(u => u.includes(q));
-  if(matchedUsers.length === 0) { dropdown.style.display = 'none'; return; }
-  matchedUsers.forEach(u => {
-    let item = document.createElement('div');
+  var q = query.trim().toLowerCase();
+  if (!q) { dropdown.style.display = 'none'; return; }
+  var matchedUsers = Object.keys(userDatabase).filter(function(u) { return u.includes(q); });
+  if (matchedUsers.length === 0) { dropdown.style.display = 'none'; return; }
+  matchedUsers.forEach(function(u) {
+    var item = document.createElement('div');
     item.className = 'autocomplete-item';
     item.innerHTML = '<span style="font-size:12px; font-weight:bold;">' + u + '</span>';
-    item.onclick = () => selectBotTarget(u);
+    item.onclick = function() { selectBotTarget(u); };
     dropdown.appendChild(item);
   });
   dropdown.style.display = 'block';
@@ -2955,57 +3020,57 @@ function selectBotTarget(username) {
   document.getElementById('bot-autocomplete-dropdown').style.display = 'none';
   document.getElementById('selected-bot-target-text').textContent = username;
   selectedBotPhotoIndex = -1;
-  let pickerContainer = document.getElementById('bot-photo-picker-container');
+  var pickerContainer = document.getElementById('bot-photo-picker-container');
   pickerContainer.innerHTML = '';
-  let photos = userGalleries[username] || [];
-  if(photos.length === 0) {
+  var photos = userGalleries[username] || [];
+  if (photos.length === 0) {
     pickerContainer.innerHTML = '<span style="font-size:10px; color:rgba(255,255,255,0.4); grid-column:span 3; text-align:center; padding:10px;">User ini belum memiliki foto di galeri.</span>';
     return;
   }
-  photos.forEach((photo, idx) => {
+  photos.forEach(function(photo, idx) {
     pickerContainer.innerHTML += '<div class="bot-photo-picker-item" id="bot-picker-photo-' + idx + '" onclick="selectBotPhoto(' + idx + ')"><img src="' + photo.img + '"></div>';
   });
 }
 
 function selectBotPhoto(idx) {
   selectedBotPhotoIndex = idx;
-  document.querySelectorAll('.bot-photo-picker-item').forEach(el => el.classList.remove('selected'));
-  let targetEl = document.getElementById('bot-picker-photo-' + idx);
-  if(targetEl) targetEl.classList.add('selected');
+  document.querySelectorAll('.bot-photo-picker-item').forEach(function(el) { el.classList.remove('selected'); });
+  var targetEl = document.getElementById('bot-picker-photo-' + idx);
+  if (targetEl) targetEl.classList.add('selected');
 }
 
 function getCustomBotAmount() {
-  let val = parseInt(document.getElementById('dev-bot-custom-amount').value);
+  var val = parseInt(document.getElementById('dev-bot-custom-amount').value, 10);
   if (isNaN(val) || val <= 0) return 50;
   if (val > 100000000) return 100000000;
   return val;
 }
 
 async function runBotAddFollowers() {
-  if(currentUser !== DEV_NAME || !selectedBotTarget) return;
-  let amount = getCustomBotAmount();
+  if (currentUser !== DEV_NAME || !selectedBotTarget) return;
+  var amount = getCustomBotAmount();
   botFollowerBoost[selectedBotTarget] = Number(botFollowerBoost[selectedBotTarget] || 0) + amount;
-  await pushGitHubState({ botFollowerBoost });
+  await pushGitHubState({ botFollowerBoost: botFollowerBoost });
   updateProfileView();
   alert("🤖 Berhasil menambahkan +" + formatCompactNumber(amount) + " followers visual ke @" + selectedBotTarget + "!");
 }
 
 async function runBotAddLikesToTargetPhoto() {
-  if(currentUser !== DEV_NAME || !selectedBotTarget || selectedBotPhotoIndex === -1) return;
-  let photos = userGalleries[selectedBotTarget];
-  if(!photos || !photos[selectedBotPhotoIndex]) return;
-  let amount = getCustomBotAmount();
+  if (currentUser !== DEV_NAME || !selectedBotTarget || selectedBotPhotoIndex === -1) return;
+  var photos = userGalleries[selectedBotTarget];
+  if (!photos || !photos[selectedBotPhotoIndex]) return;
+  var amount = getCustomBotAmount();
   photos[selectedBotPhotoIndex].likes = (photos[selectedBotPhotoIndex].likes || 0) + amount;
   await pushGitHubState({ galleries: userGalleries });
   alert("🤖 Berhasil menambahkan " + formatCompactNumber(amount) + " likes bot!");
 }
 
 async function sendGlobalAnnouncement() {
-  if(currentUser !== DEV_NAME) return;
-  let text = document.getElementById('dev-announcement-input').value.trim();
-  let duration = parseInt(document.getElementById('dev-announcement-duration').value) || 10000;
-  if(!text) { alert("Masukkan teks pengumuman!"); return; }
-  const annObj = { text, duration, time: Date.now() };
+  if (currentUser !== DEV_NAME) return;
+  var text = document.getElementById('dev-announcement-input').value.trim();
+  var duration = parseInt(document.getElementById('dev-announcement-duration').value, 10) || 10000;
+  if (!text) { alert("Masukkan teks pengumuman!"); return; }
+  var annObj = { text: text, duration: duration, time: Date.now() };
   showAnnouncementBanner(text, duration);
   document.getElementById('dev-announcement-input').value = '';
   await pushGitHubState({ announcement: annObj });
@@ -3013,13 +3078,13 @@ async function sendGlobalAnnouncement() {
 }
 
 function filterDevBanUsers(query) {
-  let list = document.getElementById('dev-ban-list');
-  if(!list) return;
+  var list = document.getElementById('dev-ban-list');
+  if (!list) return;
   list.innerHTML = '';
-  for(let u in userDatabase) {
-    if(u === DEV_NAME) continue;
-    if(u.includes(query.toLowerCase())) {
-      let isBanned = bannedUsers.includes(u);
+  for (var u in userDatabase) {
+    if (u === DEV_NAME) continue;
+    if (u.includes(query.toLowerCase())) {
+      var isBanned = bannedUsers.includes(u);
       list.innerHTML +=
         '<div class="user-item">' +
           '<span>' + sanitizeHTML(u) + ' ' + (isBanned ? '(BANNED)' : '') + '</span>' +
@@ -3030,31 +3095,39 @@ function filterDevBanUsers(query) {
 }
 
 async function toggleBanUser(username) {
-  if(currentUser !== DEV_NAME) return;
-  let reason = document.getElementById('dev-ban-reason-input').value.trim() || "Melanggar aturan komunitas.";
-  if(bannedUsers.includes(username)) {
-    bannedUsers = bannedUsers.filter(u => u !== username);
+  if (currentUser !== DEV_NAME) return;
+  var reason = document.getElementById('dev-ban-reason-input').value.trim() || "Melanggar aturan komunitas.";
+  if (bannedUsers.includes(username)) {
+    bannedUsers = bannedUsers.filter(function(u) { return u !== username; });
     alert("User " + username + " di-unban.");
   } else {
     bannedUsers.push(username);
     playSoundEffect('ban');
     messages.push({
       id: 'msg_' + Date.now(),
-      user: "SYSTEM", avatar: "", text: "⚠️ PENGUMUMAN BAN: Akun @" + username + " dibanned karena: \"" + reason + "\".",
-      frame: "", bubble: "", nameEffect: "", textEffect: "", fontEffect: "", shape: "shape_circle", accessory: "acc_none"
+      user: "SYSTEM",
+      avatar: "",
+      text: "⚠️ PENGUMUMAN BAN: Akun @" + username + " dibanned karena: \"" + reason + "\".",
+      frame: "",
+      bubble: "",
+      nameEffect: "",
+      textEffect: "",
+      fontEffect: "",
+      shape: "shape_circle",
+      accessory: "acc_none"
     });
     renderMessages();
     alert("User " + username + " berhasil dibanned!");
   }
-  await pushGitHubState({ banned: bannedUsers, messages });
+  await pushGitHubState({ banned: bannedUsers, messages: messages });
   filterDevBanUsers(document.getElementById('search-ban-input').value);
 }
 
 function uploadDevBackground(event) {
-  if(currentUser !== DEV_NAME) return;
-  const file = event.target.files[0];
-  if(file) {
-    const reader = new FileReader();
+  if (currentUser !== DEV_NAME) return;
+  var file = event.target.files[0];
+  if (file) {
+    var reader = new FileReader();
     reader.onload = function(ev) {
       customBgImage = ev.target.result;
       document.body.style.setProperty('background-image', 'url(' + customBgImage + ')');
@@ -3066,7 +3139,7 @@ function uploadDevBackground(event) {
 }
 
 function resetBackground() {
-  if(currentUser !== DEV_NAME) return;
+  if (currentUser !== DEV_NAME) return;
   customBgImage = "";
   document.body.style.removeProperty('background-image');
   localStorage.removeItem('chat_bg_image');
@@ -3074,35 +3147,36 @@ function resetBackground() {
 }
 
 function uploadDevAudio(event) {
-  if(currentUser !== DEV_NAME) return;
-  const file = event.target.files[0];
-  if(file) {
-    const fileURL = URL.createObjectURL(file);
-    let audio = document.getElementById('global-bg-audio');
-    audio.src = fileURL; audio.play().catch(() => {});
+  if (currentUser !== DEV_NAME) return;
+  var file = event.target.files[0];
+  if (file) {
+    var fileURL = URL.createObjectURL(file);
+    var audio = document.getElementById('global-bg-audio');
+    audio.src = fileURL;
+    audio.play().catch(function() {});
     document.getElementById('now-playing-label').textContent = "Memutar lagu: " + file.name;
   }
 }
 
 function toggleMuteGlobalAudio() {
-  if(currentUser !== DEV_NAME) return;
-  let audio = document.getElementById('global-bg-audio');
+  if (currentUser !== DEV_NAME) return;
+  var audio = document.getElementById('global-bg-audio');
   audio.muted = !audio.muted;
-  let muteBtn = document.getElementById('mute-global-btn');
+  var muteBtn = document.getElementById('mute-global-btn');
   muteBtn.textContent = audio.muted ? "🔊 Unmute Musik untuk Semua" : "🔇 Mute Musik untuk Semua";
   muteBtn.style.background = audio.muted ? "#10b981" : "#ef4444";
 }
 
 async function devGiveCoins() {
-  if(currentUser !== DEV_NAME) return;
-  let targetUser = (selectedGiftCoinTarget || document.getElementById('dev-gift-coin-search').value || "").trim().toLowerCase();
+  if (currentUser !== DEV_NAME) return;
+  var targetUser = (selectedGiftCoinTarget || document.getElementById('dev-gift-coin-search').value || "").trim().toLowerCase();
   if (!targetUser || !userDatabase[targetUser]) {
     alert("Pilih username target koin yang valid lewat search!");
     return;
   }
-  let amount = parseInt(document.getElementById('dev-coin-amount').value);
-  if(isNaN(amount) || amount <= 0) { alert("Jumlah koin tidak valid!"); return; }
-  if(targetUser === currentUser) {
+  var amount = parseInt(document.getElementById('dev-coin-amount').value, 10);
+  if (isNaN(amount) || amount <= 0) { alert("Jumlah koin tidak valid!"); return; }
+  if (targetUser === currentUser) {
     userCoins += amount;
     updateCoinsDisplay();
   }
