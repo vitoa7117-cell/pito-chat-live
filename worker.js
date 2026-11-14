@@ -1026,7 +1026,8 @@ function getEffectStyleData(itemId) {
   let base = THEME_PALETTES[idx % THEME_PALETTES.length];
   let hueOffset = Math.floor(idx / THEME_PALETTES.length) * 65;
   return {
-    name: `${base.name} #${idx + 1}`,
+   name: base.name + " #" + (idx + 1),
+
     price: 300 + (idx * 45),
     c1: base.c1,
     c2: base.c2,
@@ -1039,7 +1040,8 @@ function getFontStyleData(itemId) {
   if(!itemId) return null;
   let idx = parseInt(itemId.split('_')[1]);
   if(isNaN(idx)) return null;
-  let base = FONT_STYLES[idx % FONT_STYLES.length];
+  return { name: base.name + " #" + (idx + 1), price: 250 + (idx * 35), style: base.style };
+
   return { name: `${base.name} #${idx + 1}`, price: 250 + (idx * 35), style: base.style };
 }
 
